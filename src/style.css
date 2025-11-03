@@ -10,11 +10,14 @@
   --fg: #1f2328;
   --muted: #7a7a7a;
   --border: #e5e7eb;
+  /* 更清晰的边框与代码背景（所见模式用） */
+  --border-strong: #cbd5e1; /* slate-300 */
   --panel-bg: #f3f4f6;
   /* 所见模式变量 */
   --wysiwyg-bg: #e9edf5;           /* 更深一点的蓝灰 */
   --wysiwyg-status-h: 24px;        /* 状态条高度 */
   --wysiwyg-status-bg: #d9e2f2;    /* 状态条背景 */
+  --code-bg: #f6f8fa;              /* 代码块背景（亮） */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,10 +26,12 @@
     --fg: #e5e7eb;
     --muted: #9ca3af;
     --border: #1f2937;
+    --border-strong: #374151;      /* slate-700 */
     --panel-bg: #0e1217;
     /* 深色所见模式变量 */
     --wysiwyg-bg: #0b1016;         /* 更深的蓝黑 */
     --wysiwyg-status-bg: #0f1a24;  /* 状态条背景 */
+    --code-bg: #111827;            /* 代码块背景（暗） */
   }
 }
 html, body, #app { height: 100%; }
@@ -166,11 +171,32 @@ body > .block-menu { display: none !important; }
 }
 .container.wysiwyg-v2 .ProseMirror img,
 .container.wysiwyg-v2 .ProseMirror video { max-width: 100%; height: auto; }
-.container.wysiwyg-v2 .ProseMirror table { width: auto; max-width: 100%; }
+.container.wysiwyg-v2 .ProseMirror table { width: auto; max-width: 100%; border-collapse: collapse; }
+.container.wysiwyg-v2 .ProseMirror th,
+.container.wysiwyg-v2 .ProseMirror td { border: 1px solid var(--border-strong); padding: 6px 8px; }
 .container.wysiwyg-v2 .ProseMirror:focus { outline: none; }
 .container.wysiwyg-v2 .ProseMirror p { margin: 0.6em 0; }
-.container.wysiwyg-v2 .ProseMirror pre { background: rgba(127,127,127,0.08); padding: 10px; border-radius: 8px; overflow: auto; }
-.container.wysiwyg-v2 .ProseMirror code { font-family: inherit; background: rgba(127,127,127,0.08); padding: 2px 4px; border-radius: 4px; }
+.container.wysiwyg-v2 .ProseMirror pre {
+  background: var(--code-bg);
+  padding: 10px;
+  border-radius: 8px;
+  overflow: auto;
+  border: none; /* 去掉所见模式代码块边框 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.container.wysiwyg-v2 .ProseMirror code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: none; /* 去掉所见模式行内代码边框 */
+}
+.container.wysiwyg-v2 .ProseMirror blockquote { border-left: 3px solid var(--border-strong); padding-left: 10px; color: var(--muted); }
+
+/* 所见模式的临时预览 UI 提升可见性 */
+#wysi-preview-popover { border-color: var(--border-strong) !important; }
+#wysi-float-preview { border-color: var(--border-strong) !important; }
+#md-wysiwyg-root .mmd-preview { border-color: var(--border-strong) !important; }
 
 /* 所见模式覆盖：即使预览带有 hidden 类，也强制显示 */
 .container.wysiwyg .preview.hidden { display: block; }

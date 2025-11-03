@@ -552,6 +552,24 @@ async fn check_update(_force: Option<bool>, include_prerelease: Option<bool>) ->
         proxy_url: gh_proxy_url(&a.browser_download_url),
       });
     }
+  } else if os_tag == "macos" {
+    let (x64, arm) = match_macos_assets(&latest.assets);
+    if let Some(a) = x64 {
+      asset_macos_x64 = Some(UpdateAssetInfo{
+        name: a.name.clone(),
+        size: a.size.unwrap_or(0),
+        direct_url: a.browser_download_url.clone(),
+        proxy_url: gh_proxy_url(&a.browser_download_url),
+      });
+    }
+    if let Some(a) = arm {
+      asset_macos_arm = Some(UpdateAssetInfo{
+        name: a.name.clone(),
+        size: a.size.unwrap_or(0),
+        direct_url: a.browser_download_url.clone(),
+        proxy_url: gh_proxy_url(&a.browser_download_url),
+      });
+    }
   }
 
   let notes = latest.body.unwrap_or_default();
@@ -850,39 +868,6 @@ async fn get_platform() -> Result<String, String> {
   }
 }
 
-fn match_macos_assets(assets: &[GhAsset]) -> (Option<&GhAsset>, Option<&GhAsset>) {
-  // 返回 (x64, arm64)
-  let mut x64: Option<&GhAsset> = None;
-  let mut arm: Option<&GhAsset> = None;
-  for a in assets {
-    let n = a.name.to_ascii_lowercase();
-    // 仅考虑 macOS 常见包后缀
-    let is_macos_pkg = n.ends_with(".dmg") || n.ends_with(".pkg") || n.ends_with(".zip");
-    if !is_macos_pkg { continue; }
-    if (n.contains("arm64") || n.contains("aarch64")) && arm.is_none() { arm = Some(a); continue; }
-    if (n.contains("x86_64") || n.contains("x64") || n.contains("amd64")) && x64.is_none() { x64 = Some(a); continue; }
-  }
-  else if os_tag == "macos" {
-    let (x64, arm) = match_macos_assets(&latest.assets);
-    if let Some(a) = x64 {
-      asset_macos_x64 = Some(UpdateAssetInfo{
-        name: a.name.clone(),
-        size: a.size.unwrap_or(0),
-        direct_url: a.browser_download_url.clone(),
-        proxy_url: gh_proxy_url(&a.browser_download_url),
-      });
-    }
-    if let Some(a) = arm {
-      asset_macos_arm = Some(UpdateAssetInfo{
-        name: a.name.clone(),
-        size: a.size.unwrap_or(0),
-        direct_url: a.browser_download_url.clone(),
-        proxy_url: gh_proxy_url(&a.browser_download_url),
-      });
-    }
-  }
-  (x64, arm)
-}
 fn match_macos_assets(assets: &[GhAsset]) -> (Option<&GhAsset>, Option<&GhAsset>) {
   // 返回 (x64, arm64)
   let mut x64: Option<&GhAsset> = None;

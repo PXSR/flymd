@@ -8,7 +8,7 @@ import { automd } from '@milkdown/plugin-automd'
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { EditorView } from '@milkdown/prose/view'
-import { vue } from '@codemirror/lang-markdown'
+import { markdown } from '@codemirror/lang-markdown'
 import { uploader } from './plugins/paste'
 
 let _crepe: Crepe | null = null
@@ -23,7 +23,7 @@ export async function enableWysiwygV2(root: HTMLElement, markdown: string, onCha
     root,
     defaultValue: (markdown || '').toString(),
     featureConfigs: {
-      'code-mirror': { extensions: [vue()] },
+      'code-mirror': { extensions: [markdown()] },
       // 其余默认特性使用 crepe 内置配置
     },
   })
@@ -65,4 +65,3 @@ export async function disableWysiwygV2() {
 }
 
 export function isWysiwygV2Enabled(): boolean { return !!_crepe }
-

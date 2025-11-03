@@ -1,7 +1,7 @@
 // 所见模式 V2：基于 Milkdown 的真实所见编辑视图
 // 暴露 enable/disable 与 setMarkdown/getMarkdown 能力，供主流程挂接
 
-import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx, editorViewCtx } from '@milkdown/core'
+import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx, editorViewCtx, commandsCtx } from '@milkdown/core'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { readFile } from '@tauri-apps/plugin-fs'
@@ -299,6 +299,30 @@ export function isWysiwygV2Enabled(): boolean { return !!_editor }
 export async function wysiwygV2ReplaceAll(markdown: string) {
   if (!_editor) return
   try { await _editor.action(replaceAll(markdown)) } catch {}
+}
+
+// =============== 所见模式：编辑命令桥接（加粗/斜体/链接） ===============
+export async function wysiwygV2ToggleBold() {
+  if (!_editor) return
+  const { toggleStrongCommand } = await import('@milkdown/preset-commonmark')
+  await _editor.action((ctx) => { ctx.get(commandsCtx).call((toggleStrongCommand as any).key) })
+}
+export async function wysiwygV2ToggleItalic() {
+  if (!_editor) return
+  const { toggleEmphasisCommand } = await import('@milkdown/preset-commonmark')
+  await _editor.action((ctx) => { ctx.get(commandsCtx).call((toggleEmphasisCommand as any).key) })
+}
+export async function wysiwygV2ApplyLink(href: string, title?: string) {
+  if (!_editor) return
+  const { toggleLinkCommand, updateLinkCommand } = await import('@milkdown/preset-commonmark')
+  await _editor.action((ctx) => {
+    const commands = ctx.get(commandsCtx)
+    // 优先：若有选区，切换/更新链接
+    if (!commands.call((toggleLinkCommand as any).key, { href, title })) {
+      // 兜底：尝试更新当前链接 mark（如果光标处已有）
+      commands.call((updateLinkCommand as any).key, { href, title })
+    }
+  })
 }
 
 

@@ -98,8 +98,8 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 
 .container { height: calc(100% - 32px); position: relative; }
 /* 所见模式：整体容器背景替换为专用色 */
-.container.wysiwyg { display: none; }
-.container.wysiwyg-v2 { background: var(--bg); }
+.container.wysiwyg { /* legacy overlay 标记，保留但不隐藏容器，避免误伤 */ }
+.container.wysiwyg-v2 { background: #e9edf5; }
 
 .editor {
   width: 100%; height: 100%;
@@ -118,13 +118,62 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 .preview.hidden { display: none; }
 
 /* 所见 V2：真实所见视图容器 */
-#md-wysiwyg-root { position: absolute; inset: 0; display: none; }
+#md-wysiwyg-root, #md-wysiwyg-root * { box-sizing: border-box; }
+#md-wysiwyg-root { position: absolute; inset: 0; display: none; overflow: auto; z-index: 2; }
 .container.wysiwyg-v2 #md-wysiwyg-root { display: block; }
+.container.wysiwyg-v2-loading #md-wysiwyg-root { display: none; }
 .container.wysiwyg-v2 .editor { display: none; }
+.container.wysiwyg-v2-loading .editor { display: block; }
 .container.wysiwyg-v2 .preview { display: none !important; }
 /* 保证所见 V2 的滚动容器占满并可滚动 */
-#md-wysiwyg-root, #md-wysiwyg-root * { box-sizing: border-box; }
 #md-wysiwyg-root .scrollView { height: 100%; overflow-y: auto; }
+/* 兜底：Milkdown 根容器（通常为 .milkdown）与其第一级子元素占满高度 */
+#md-wysiwyg-root > .milkdown { display: block; min-height: 100%; height: 100%; }
+#md-wysiwyg-root > div { display: block; min-height: 100%; }
+
+/* V2 状态提示（右下角） */
+.wysiwyg-v2-indicator {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(127,127,255,0.1);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* 如有富文本工具条，默认隐藏，纯所见编辑 */
+#md-wysiwyg-root [role="toolbar"] { display: none !important; }
+/* 隐藏 Milkdown block/slash 插件的 UI 组件（更精确的选择器，不影响内容块） */
+#md-wysiwyg-root .milkdown-menu { display: none !important; }
+#md-wysiwyg-root [data-block-handle] { display: none !important; }
+#md-wysiwyg-root [data-slash-menu] { display: none !important; }
+#md-wysiwyg-root .slash-dropdown { display: none !important; }
+#md-wysiwyg-root .block-menu { display: none !important; }
+/* 隐藏全局的浮动 UI 面板（portal 到 body 的元素） */
+body > [data-tippy-root] { display: none !important; }
+body > [data-block-handle] { display: none !important; }
+body > [data-slash-menu] { display: none !important; }
+body > .milkdown-menu { display: none !important; }
+body > .slash-dropdown { display: none !important; }
+body > .block-menu { display: none !important; }
+
+/* ProseMirror 基础样式，确保 V2 视图可编辑、可滚动、行距正常 */
+.container.wysiwyg-v2 .ProseMirror {
+  min-height: 100%;
+  padding: 14px 16px 40px 16px;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+}
+.container.wysiwyg-v2 .ProseMirror:focus { outline: none; }
+.container.wysiwyg-v2 .ProseMirror p { margin: 0.6em 0; }
+.container.wysiwyg-v2 .ProseMirror pre { background: rgba(127,127,127,0.08); padding: 10px; border-radius: 8px; overflow: auto; }
+.container.wysiwyg-v2 .ProseMirror code { font-family: inherit; background: rgba(127,127,127,0.08); padding: 2px 4px; border-radius: 4px; }
 
 /* 所见模式覆盖：即使预览带有 hidden 类，也强制显示 */
 .container.wysiwyg .preview.hidden { display: block; }
@@ -317,6 +366,8 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 /* 展示库时，为编辑/预览留出空间（不改动原有 DOM） */
 .container.with-library .editor,
 .container.with-library .preview { padding-left: 300px; }
+/* 所见 V2 打开文档库侧栏时，避免编辑区被左侧面板覆盖 */
+.container.with-library #md-wysiwyg-root { left: 300px; width: calc(100% - 300px); }
 
 .statusbar {
   position: absolute; right: 10px; bottom: 8px; font-size: 12px; color: var(--muted);

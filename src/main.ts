@@ -650,11 +650,15 @@ async function setWysiwygEnabled(enable: boolean) {
     if (wysiwyg === enable) return
     wysiwyg = enable
     const container = document.querySelector('.container') as HTMLDivElement | null
-    if (container) container.classList.toggle('wysiwyg', wysiwyg && !wysiwygV2Active)
-    if (container) container.classList.toggle('wysiwyg-v2', wysiwyg && wysiwygV2Active)
+    // 旧所见模式已移除：不要再添加 .wysiwyg，否则容器会被隐藏
+    if (container) container.classList.remove('wysiwyg')
+    // 先进入 loading 状态：不隐藏编辑器，避免空白期
+    if (container && wysiwyg) { container.classList.add('wysiwyg-v2'); container.classList.add('wysiwyg-v2-loading') }
+    if (container && !wysiwyg) { container.classList.remove('wysiwyg-v2-loading'); container.classList.remove('wysiwyg-v2') }
   if (wysiwyg) {
       // 优先启用 V2：真实所见编辑视图
       try {
+        console.log('[WYSIWYG] Enabling V2, editor.value length:', (editor.value || '').length)
         let root = document.getElementById('md-wysiwyg-root') as HTMLDivElement | null
         if (!root) {
           root = document.createElement('div')
@@ -662,18 +666,46 @@ async function setWysiwygEnabled(enable: boolean) {
           const host = document.querySelector('.container') as HTMLDivElement | null
           if (host) host.appendChild(root)
         }
+        // 给 root 一个占位提示，避免用户误以为空白
+        try { if (root) root.textContent = '正在加载所见编辑器…' } catch {}
+        // 调用 enableWysiwygV2 来创建/更新编辑器（会自动处理清理和重建）
         await enableWysiwygV2(root!, editor.value, (mdNext) => {
           try { editor.value = mdNext; dirty = true; refreshTitle(); refreshStatus() } catch {}
         })
         wysiwygV2Active = true
-        if (container) { container.classList.add('wysiwyg-v2'); }
+        if (container) { container.classList.remove('wysiwyg-v2-loading'); container.classList.add('wysiwyg-v2'); }
+        try { if (root) (root as HTMLElement).style.display = 'block' } catch {}
         try { preview.classList.add('hidden') } catch {}
         // 移除旧滚轮处理器
         try { if (_wheelHandlerRef) { container?.removeEventListener('wheel', _wheelHandlerRef as any); _wheelHandlerRef = null } } catch {}
+        // 追加所见模式提示（右下角）
+        try {
+          let ind = document.getElementById('wysiwyg-v2-indicator') as HTMLDivElement | null
+          if (!ind) {
+            ind = document.createElement('div') as HTMLDivElement
+            ind.id = 'wysiwyg-v2-indicator'
+            ind.className = 'wysiwyg-v2-indicator'
+            ind.textContent = '所见模式 · Ctrl+Shift+E 退出'
+            container?.appendChild(ind)
+          }
+        } catch {}
+        // 确保富文本视图获得焦点
+        setTimeout(() => {
+          try {
+            const pm = root!.querySelector('.ProseMirror') as HTMLElement | null
+            pm?.focus()
+          } catch {}
+        }, 0)
         return
       } catch (e) {
         console.error('启用所见V2失败，将回退到旧模式', e)
         wysiwygV2Active = false
+        // 若 V2 启动失败，需确保 loading 态与 v2 类被清理，避免根容器保持隐藏导致“空白/不可编辑”
+        try {
+          const container2 = document.querySelector('.container') as HTMLDivElement | null
+          container2?.classList.remove('wysiwyg-v2-loading')
+          container2?.classList.remove('wysiwyg-v2')
+        } catch {}
       }
       // 进入所见模式时，清理一次延迟标记，避免历史状态影响
       wysiwygHoldInlineDollarUntilEnter = false
@@ -691,6 +723,7 @@ async function setWysiwygEnabled(enable: boolean) {
         try { await disableWysiwygV2() } catch {}
         wysiwygV2Active = false
         if (container) container.classList.remove('wysiwyg-v2')
+        try { const ind = document.getElementById('wysiwyg-v2-indicator'); ind?.remove() } catch {}
       }
       if (mode !== 'preview') {
         try { preview.classList.add('hidden') } catch {}
@@ -2609,12 +2642,19 @@ function syncToggleButton() {
 
 // 打开文件后强制切换为预览模式
 async function switchToPreviewAfterOpen() {
-  if (wysiwyg) {
-    try { await renderPreview() } catch (e) { try { showError('Ԥ����Ⱦʧ��', e) } catch {} }
-    try { preview.classList.remove('hidden') } catch {}
+  // 若所见 V2 已启用：刷新所见视图内容而不是切换到预览
+  if (wysiwygV2Active) {
+    try {
+      const root = document.getElementById('md-wysiwyg-root') as HTMLDivElement | null
+      if (root) {
+        await enableWysiwygV2(root, editor.value, (mdNext) => { try { editor.value = mdNext; dirty = true; refreshTitle(); refreshStatus() } catch {} })
+      }
+    } catch {}
+    try { preview.classList.add('hidden') } catch {}
     try { syncToggleButton() } catch {}
     return
   }
+  if (wysiwyg) { return }
   mode = 'preview'
   try { await renderPreview() } catch (e) { try { showError('预览渲染失败', e) } catch {} }
   try { preview.classList.remove('hidden') } catch {}
@@ -2704,6 +2744,13 @@ async function getUploaderConfig(): Promise<UploaderConfig | null> {
     return cfg
   } catch { return null }
 }
+
+// 将获取上传配置的方法暴露到全局，供所见 V2 的上传插件使用
+try {
+  if (typeof window !== 'undefined') {
+    ;(window as any).flymdGetUploaderConfig = getUploaderConfig
+  }
+} catch {}
 
 function showUploaderOverlay(show: boolean) {
   const overlay = document.getElementById('uploader-overlay') as HTMLDivElement | null

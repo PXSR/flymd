@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-[![Version](https://img.shields.io/badge/version-v0.1.2-blue.svg)](https://github.com/flyhunterl/flymd)
+[![Version](https://img.shields.io/badge/version-v0.1.4-blue.svg)](https://github.com/flyhunterl/flymd)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/flyhunterl/flymd)
 
@@ -156,6 +156,7 @@ flyMD 支持通过扩展插件来增强功能。你可以：
 - 更改所见模式中Latex公式为全局渲染
 - 修复未保存文档直接关闭程序，不弹出保存提示的问题
 - 修复阅读模式中代码块格式异常的问题
+- 修复Linux图标不显示的问题
 
 
 ## 更新 v0.1.3

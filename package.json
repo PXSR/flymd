@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "pretauri:dev": "node scripts/ensure-icons.cjs",
+    "pretauri:build": "node scripts/ensure-icons.cjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
@@ -43,3 +45,4 @@
     "punycode": "^2.3.0"
   }
 }
+

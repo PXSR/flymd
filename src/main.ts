@@ -1630,7 +1630,7 @@ async function ensureRenderer() {
     })
     // 启用 KaTeX 支持（$...$ / $$...$$）
     try {
-      const katexPlugin = (await import('markdown-it-katex')).default as any
+      const katexPlugin = (await import('./plugins/markdownItKatex')).default as any
       if (typeof katexPlugin === 'function') md.use(katexPlugin)
     } catch (e) {
       console.warn('markdown-it-katex 加载失败：', e)
@@ -5049,6 +5049,7 @@ async function loadAndActivateEnabledPlugins(): Promise<void> {
     }
   } catch {}
 }
+
 
 
 

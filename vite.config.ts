@@ -15,12 +15,7 @@ const DEV_CSP = [
 
 export default defineConfig(({ mode }) => ({
   base: './',
-  resolve: {
-    alias: {
-      // 将 Node 内置的 punycode 指向浏览器版 polyfill，修复 markdown-it 在浏览器端的链接规范化报错
-      punycode: 'punycode/'
-    }
-  },
+  resolve: { alias: {}, dedupe: ['katex'] },
   server: {
     host: '127.0.0.1',
     port: 5173,
@@ -29,7 +24,7 @@ export default defineConfig(({ mode }) => ({
   // 生产构建：分包与剥离 console/debugger；开发：预打包重库
   esbuild: mode === 'production' ? { drop: ['console', 'debugger'] } : {},
   optimizeDeps: {
-    include: ['markdown-it', 'dompurify', 'highlight.js', 'mermaid', 'markdown-it-katex']
+    include: ['markdown-it', 'dompurify', 'highlight.js', 'mermaid', 'katex']
   },
   build: {
     // 为了使用动态 import 和顶层 await
@@ -49,3 +44,4 @@ export default defineConfig(({ mode }) => ({
     minify: 'esbuild'
   }
 }))
+

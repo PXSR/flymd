@@ -145,6 +145,83 @@ async function openSyncLog(): Promise<void> {
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
+// 本地结构快照（存放于库根目录），用于快速短路“无变化”的同步
+// 注意：仅作为性能优化的提示，真实一致性仍由常规流程保障
+const LOCAL_HINT_FILENAME = '.flymd-sync-hint.json'
+
+type LocalStructureHint = {
+  totalDirs: number
+  totalFiles: number
+  maxMtime: number
+}
+
+// 从库根读取快照
+async function readLocalStructureHint(root: string): Promise<LocalStructureHint | null> {
+  try {
+    const sep = root.includes('\\') ? '\\' : '/'
+    const hintPath = root.replace(/[\\/]+$/, '') + sep + LOCAL_HINT_FILENAME
+    if (!(await exists(hintPath as any))) return null
+    const data = await readFile(hintPath as any)
+    const text = new TextDecoder().decode(data)
+    if (!text.trim()) return null
+    const obj = JSON.parse(text)
+    if (typeof obj.totalFiles === 'number' && typeof obj.totalDirs === 'number' && typeof obj.maxMtime === 'number') {
+      return obj as LocalStructureHint
+    }
+    return null
+  } catch { return null }
+}
+
+// 写入快照到库根
+async function writeLocalStructureHint(root: string, hint: LocalStructureHint): Promise<void> {
+  try {
+    const sep = root.includes('\\') ? '\\' : '/'
+    const hintPath = root.replace(/[\\/]+$/, '') + sep + LOCAL_HINT_FILENAME
+    const text = JSON.stringify(hint)
+    const data = new TextEncoder().encode(text)
+    await writeFile(hintPath as any, data as any)
+  } catch {}
+}
+
+// 轻量汇总：仅统计目录数、文件数与最大修改时间；跳过隐藏项与非同步扩展
+async function quickSummarizeLocal(root: string): Promise<LocalStructureHint> {
+  let totalFiles = 0
+  let totalDirs = 0
+  let maxMtime = 0
+
+  async function walk(dir: string) {
+    let ents: any[] = []
+    try { ents = await readDir(dir, { recursive: false } as any) as any[] } catch { ents = [] }
+    for (const e of ents) {
+      const name = String(e.name || '')
+      if (!name) continue
+      if (name.startsWith('.')) continue
+      const full = dir + (dir.includes('\\') ? '\\' : '/') + name
+      try {
+        let isDir = !!(e as any)?.isDirectory
+        if ((e as any)?.isDirectory === undefined) {
+          try { const st = await stat(full) as any; isDir = !!st?.isDirectory } catch { isDir = false }
+        }
+        if (isDir) {
+          totalDirs++
+          await walk(full)
+        } else {
+          if (!/\.(md|markdown|txt|png|jpg|jpeg|gif|svg|pdf)$/i.test(name)) continue
+          totalFiles++
+          try {
+            const meta = await stat(full)
+            const mt = Number((meta as any)?.modifiedAt || (meta as any)?.mtime || (meta as any)?.mtimeMs || 0)
+            if (mt > maxMtime) maxMtime = mt
+          } catch {}
+        }
+      } catch {}
+    }
+  }
+
+  await walk(root)
+  return { totalDirs, totalFiles, maxMtime }
+}
+
 export type SyncReason = 'manual' | 'startup' | 'shutdown'
 
 export type WebdavSyncConfig = {
@@ -399,6 +476,8 @@ async function listRemoteRecursively(baseUrl: string, auth: { username: string; 
     }
     const files = __filesRes.files || []
     for (const f of files) {
+      if (!f?.name) continue
+      if (String(f.name).startsWith('.')) continue
       const r = rel ? rel + '/' + f.name : f.name
       if (f.isDir) {
         await walk(r)
@@ -503,6 +582,33 @@ export async function syncNow(reason: SyncReason): Promise<{ uploaded: number; d
     // 获取上次同步的元数据
     const lastMeta = await getSyncMetadata()
 
+    // 使用库根快照进行快速短路（仅在 skipRemoteScanMinutes 时间窗内）
+    try {
+      const skipMinutes = cfg.skipRemoteScanMinutes !== undefined ? cfg.skipRemoteScanMinutes : 5
+      const timeSinceLastSync = Date.now() - (lastMeta.lastSyncTime || 0)
+      const recentlyScanned = timeSinceLastSync < skipMinutes * 60 * 1000
+
+      updateStatus('快速检查本地变更…')
+      const lastHint = await readLocalStructureHint(localRoot)
+      const curHint = await quickSummarizeLocal(localRoot)
+
+      if (curHint.totalFiles === 0) {
+        await syncLog('[hint] 检测到本地为空，仍将进行远程扫描')
+      } else if (lastHint && recentlyScanned && skipMinutes > 0) {
+        const sameFiles = lastHint.totalFiles === curHint.totalFiles
+        const sameDirs = lastHint.totalDirs === curHint.totalDirs
+        const sameMaxMtime = Math.abs(lastHint.maxMtime - curHint.maxMtime) <= 1000
+        if (sameFiles && sameDirs && sameMaxMtime) {
+          await syncLog('[hint-skip] 本地结构与上次一致，且刚同步过，跳过本次同步')
+          updateStatus('本地无变化，已跳过同步')
+          clearStatus(2000)
+          return { uploaded: 0, downloaded: 0, skipped: true }
+        }
+      }
+    } catch (e) {
+      console.warn('快速短路检查失败（忽略并继续正常流程）', e)
+    }
+
     // 扫描本地文件
     updateStatus('正在扫描本地文件…')
     const localIdx = await scanLocal(localRoot, lastMeta)  // 传入 lastMeta 用于哈希缓存
@@ -532,7 +638,7 @@ export async function syncNow(reason: SyncReason): Promise<{ uploaded: number; d
     const skipMinutes = cfg.skipRemoteScanMinutes !== undefined ? cfg.skipRemoteScanMinutes : 5
     const recentlyScanned = timeSinceLastSync < skipMinutes * 60 * 1000
 
-    if (!hasLocalChanges && recentlyScanned && skipMinutes > 0) {
+    if (!hasLocalChanges && recentlyScanned && skipMinutes > 0 && localIdx.size > 0) {
       await syncLog('[skip-remote] 本地无修改且最近刚同步过(' + Math.floor(timeSinceLastSync / 1000) + '秒前)，跳过远程扫描')
       updateStatus('本地无修改，跳过同步')
       clearStatus(2000)
@@ -949,6 +1055,13 @@ export async function syncNow(reason: SyncReason): Promise<{ uploaded: number; d
     await syncLog('[save-meta] 正在保存元数据，共 ' + Object.keys(newMeta.files).length + ' 个文件记录')
     await saveSyncMetadata(newMeta)
     await syncLog('[save-meta] 元数据保存完成')
+
+    // 同步完成后，刷新并保存库根快照，供下次快速短路判断
+    try {
+      const postHint = await quickSummarizeLocal(localRoot)
+      await writeLocalStructureHint(localRoot, postHint)
+      await syncLog('[save-hint] 已更新本地结构快照')
+    } catch {}
 
     try {
       let msg = `同步完成（`

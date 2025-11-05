@@ -397,9 +397,11 @@ body > .block-menu { display: none !important; }
 /* 文档类型标识：在“纸张”上绘制 2-3 字母的类型缩写 */
 .library .lib-ico-file::before { position: absolute; left: 1px; top: 0; font-size: 8px; line-height: 1; color: currentColor; }
 .library .lib-ico-md::before { content: 'MD'; }
-.library .lib-ico-txt::before { content: 'TXT'; font-size: 7px; top: 1px; }
+.library .lib-ico-txt::before { content: 'T'; font-size: 5px; top: 2px; }
+/* TXT 使用紫色主题 */
+.library .lib-ico-txt { color: #7c3aed; }
 /* 悬浮时提亮 */
-.library .lib-node:hover .lib-ico-file { color: var(--fg); }
+.library .lib-node:hover .lib-ico-file:not(.lib-ico-txt) { color: var(--fg); }
 /* PDF：程序图标红色变体（通过 CSS 滤镜近似为红色），悬浮稍微增强 */
 .library .lib-ico-app.lib-ico-pdf { filter: grayscale(1) sepia(1) hue-rotate(-10deg) saturate(8) brightness(0.95) contrast(1.05); }
 .library .lib-node:hover .lib-ico-app.lib-ico-pdf { filter: grayscale(1) sepia(1) hue-rotate(-10deg) saturate(10) brightness(1) contrast(1.1); }

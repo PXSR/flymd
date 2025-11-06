@@ -127,6 +127,8 @@
         const isTildeData = (!!data && (/^~+$/.test(data) || /^～+$/.test(data)))
         if (composing && !isTildeData) return
         if (!data) return
+        // 英文输入法下的 '*' 交由 editor keydown 连击逻辑处理，这里直接跳过以避免重复
+        if (!composing && data === '*') return
         const s = ta.selectionStart >>> 0
         const e = ta.selectionEnd >>> 0
         const val = String(ta.value || '')
@@ -207,6 +209,8 @@
         const inserted = cur.slice(a, cur.length - b)
         const removed = prev.slice(a, prev.length - b)
         const hadSel = (pe > ps) || (removed.length > 0)
+        // 英文输入法下 '*' 交由 editor 的 keydown 连击逻辑，这里跳过，避免与 keydown 路径重复
+        if (String((ev as any).type || '') !== 'compositionend' && inserted === '*') { rememberPrev(); return }
         // 单个 ~ / ～：若与左侧同类波浪相邻，则展开为成对补全
         if (inserted === '~' || inserted === '～') {
           const ch = inserted
@@ -239,7 +243,26 @@
           ta.selectionStart = ta.selectionEnd = (hadSel ? (a + content.length + 3) : (a + 4))
           rememberPrev(); return
         }
+        // 加粗（** / ＊＊）：IME 一次性提交两颗星，仅将光标移至中间，避免重复补全
+                // 加粗（** / ＊＊）：IME 一次性提交两颗星，补全为 **|** 或 **选区**
+        if (inserted === '**' || /^[\uFF0A]{2}$/.test(inserted)) {
+          // IME 双星：不改文本，仅将光标移至中间，避免重复补全
+          ta.selectionStart = ta.selectionEnd = a + (inserted.length >> 1)
+          rememberPrev(); return
+        }
         if (inserted.length === 1) {
+        if (inserted === '*' || (inserted && inserted.charCodeAt(0) === 0xFF0A)) {
+          // 仅在 compositionend 调用路径或无法区分时启用（依赖上方 skip 规则避免英文重复）
+          if (a > 0 && prev.slice(a - 1, a + 1) === '**') {
+            const left = a - 1, right = a + 1
+            ta.selectionStart = left; ta.selectionEnd = right
+            if (!insertUndoable(ta as any, '****')) {
+              (ta as any).value = prev.slice(0, left) + '****' + prev.slice(right)
+            }
+            ta.selectionStart = ta.selectionEnd = left + 2
+            rememberPrev(); return
+          }
+        }
           const close = codeClose(inserted)
           if (close) {
             if (hadSel) {
@@ -277,3 +300,5 @@
     rememberPrev()
   } catch {}
 })();
+
+

@@ -4417,7 +4417,7 @@ function bindEvents() {
         const ta = getEditor(); if (!ta) return
         if (e.target !== ta) return
         if (!isEditMode()) return
-        try { if ((window as any)._imePatchActive) return } catch {}
+        if (e.key === '*') return
         if (e.ctrlKey || e.metaKey || e.altKey) return
         const val = String(ta.value || '')
         const s = ta.selectionStart >>> 0
@@ -4460,7 +4460,6 @@ function bindEvents() {
         // 通用成对/环绕（不含反引号）
         const close = (openClose as any)[e.key]; if (!close) return
         // 交给 imePatch 在 beforeinput 阶段处理，避免与此处重复
-        try { if ((window as any)._imePatchActive) return } catch {}
         e.preventDefault()
         if (s !== epos) {
           const before = val.slice(0, s); const mid = val.slice(s, epos); const after = val.slice(epos)
@@ -4632,6 +4631,10 @@ function bindEvents() {
   let _btTimer: number | null = null
   let _btSelS = 0
   let _btSelE = 0
+  let _astCount = 0
+  let _astTimer: number | null = null
+  let _astSelS = 0
+  let _astSelE = 0
   function ensureFindPanel() {
     if (_findPanel) return
     const panel = document.createElement('div')
@@ -4864,6 +4867,56 @@ function bindEvents() {
         _btTimer = (setTimeout as any)(commit, 320)
         return
       }
+            // 星号连击：1次斜体(*)；2次加粗(**)；与反引号逻辑一致，延迟收敛，避免第二次被当成“跳过右侧”
+      if (e.key === '*') {
+        try { if (_astTimer) { clearTimeout(_astTimer as any); _astTimer = null } } catch {}
+        _astCount = (_astCount || 0) + 1
+        const ta = editor as HTMLTextAreaElement
+        const val = String(ta.value || '')
+        const s0 = ta.selectionStart >>> 0
+        const e0 = ta.selectionEnd >>> 0
+        // 特判：处于 *|* 中间时，再按 * 扩展为 **|**（不跳过右侧）
+        if (s0 === e0 && s0 > 0 && val[s0 - 1] === '*' && val[s0] === '*') {
+          e.preventDefault()
+          const left = s0 - 1, right = s0 + 1
+          ta.selectionStart = left; ta.selectionEnd = right
+          if (!insertUndoable(ta, '****')) {
+            ta.value = val.slice(0, left) + '****' + val.slice(right)
+          }
+          ta.selectionStart = ta.selectionEnd = left + 2
+          dirty = true; try { refreshTitle(); refreshStatus() } catch {}
+          if (mode === 'preview') { try { void renderPreview() } catch {} } else if (wysiwyg) { try { scheduleWysiwygRender() } catch {} }
+          _astCount = 0; _astTimer = null
+          return
+        }
+        if (_astCount === 1) { _astSelS = s0; _astSelE = e0 }
+        e.preventDefault()
+        const commitStar = () => {
+          const s = _astSelS >>> 0
+          const epos = _astSelE >>> 0
+          const before = val.slice(0, s)
+          const mid = val.slice(s, epos)
+          const after = val.slice(epos)
+          const ta2 = editor as HTMLTextAreaElement
+          ta2.selectionStart = s; ta2.selectionEnd = epos
+          if (_astCount >= 2) {
+            // 加粗：**选区** 或 **|**
+            const ins = '**' + (epos > s ? mid : '') + '**'
+            if (!insertUndoable(ta2, ins)) { ta2.value = before + ins + after }
+            if (epos > s) { ta2.selectionStart = s + 2; ta2.selectionEnd = s + 2 + mid.length } else { ta2.selectionStart = ta2.selectionEnd = s + 2 }
+          } else {
+            // 斜体：*选区* 或 *|*
+            const ins = '*' + (epos > s ? mid : '') + '*'
+            if (!insertUndoable(ta2, ins)) { ta2.value = before + ins + after }
+            if (epos > s) { ta2.selectionStart = s + 1; ta2.selectionEnd = s + 1 + mid.length } else { ta2.selectionStart = ta2.selectionEnd = s + 1 }
+          }
+          dirty = true; try { refreshTitle(); refreshStatus() } catch {}
+          if (mode === 'preview') { try { void renderPreview() } catch {} } else if (wysiwyg) { try { scheduleWysiwygRender() } catch {} }
+          _astCount = 0; _astTimer = null
+        }
+        _astTimer = (setTimeout as any)(commitStar, 280)
+        return
+      }
       const _pairs: Array<[string, string]> = [
         ["(", ")"], ["[", "]"], ["{", "}"], ['"', '"'], ["'", "'"], ["*", "*"], ["_", "_"],
         ["（", "）"], ["【", "】"], ["《", "》"], ["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"]
@@ -4905,8 +4958,7 @@ function bindEvents() {
       // 自动/环绕补全
       const close = openClose[e.key]
       // 交给 imePatch 在 beforeinput 阶段处理，避免与此处重复
-      try { if ((window as any)._imePatchActive) return } catch {}
-      if (!close) return
+        if (!close) return
       e.preventDefault()
       if (s !== epos) {
         // 环绕选区
@@ -6585,6 +6637,9 @@ async function loadAndActivateEnabledPlugins(): Promise<void> {
 
 // 将所见模式开关暴露到全局，便于在 WYSIWYG V2 覆盖层中通过双击切换至源码模式
 try { (window as any).flymdSetWysiwygEnabled = async (enable: boolean) => { try { await setWysiwygEnabled(enable) } catch (e) { console.error('flymdSetWysiwygEnabled 调用失败', e) } } } catch {}
+
+
+
 
 
 

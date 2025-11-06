@@ -1,4 +1,4 @@
-﻿import './imePatch'
+import './imePatch'
 /*
 
 
@@ -2403,13 +2403,13 @@ async function renderPreview() {
       } catch {}
       if (!mermaidReady) {
         // 初始化 Mermaid；所见模式下降低日志级别，避免错误信息干扰输入体验
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: (wysiwyg ? 'fatal' as any : 'error' as any) })
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: 'fatal' as any })
         mermaidReady = true
         console.log('Mermaid 已初始化')
         try { decorateCodeBlocks(preview) } catch {}
       } else {
         // 已初始化时，动态调整日志级别（切换所见/预览模式时生效）
-        try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: (wysiwyg ? 'fatal' as any : 'error' as any) }) } catch {}
+        try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: 'fatal' as any }) } catch {}
       }
       for (let i = 0; i < nodes.length; i++) {
         const el = nodes[i]
@@ -4589,12 +4589,10 @@ function bindEvents() {
     } catch {}
   }
   // 全局错误捕获
-  window.addEventListener('error', (e) => {
-    // @ts-ignore
+  window.addEventListener('error', (e) => { try { (e as any)?.preventDefault?.() } catch {}; // @ts-ignore
     showError(e.message || '未捕获错误', (e as any)?.error)
   })
-  window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
-    const reason = (e?.reason instanceof Error) ? e.reason : new Error(String(e?.reason ?? '未知拒绝'))
+  window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => { try { e.preventDefault() } catch {}; const reason = (e?.reason instanceof Error) ? e.reason : new Error(String(e?.reason ?? '未知拒绝'))
     showError('未处理的 Promise 拒绝', reason)
   })
 

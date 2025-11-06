@@ -4503,8 +4503,8 @@ function bindEvents() {
         if (mode === 'preview') { try { void renderPreview() } catch {} } else if (wysiwyg) { try { scheduleWysiwygRender() } catch {} }
       }
 
-      document.addEventListener('beforeinput', (e) => { try { handleBeforeInput(e as any) } catch {} }, true)
-      document.addEventListener('input', (e) => { try { handleInput(e as any) } catch {} }, true)
+      document.addEventListener('beforeinput', (e) => { try { const ev: any = e as any; if (ev?.isComposing || /Composition/i.test(String(ev?.inputType || ''))) return; handleBeforeInput(e as any) } catch {} }, true)
+      document.addEventListener('input', (e) => { try { const ev: any = e as any; if (ev?.isComposing || /Composition/i.test(String(ev?.inputType || ''))) return; handleInput(e as any) } catch {} }, true)
       document.addEventListener('keydown', (e) => { try { handleKeydown(e) } catch {} }, true)
       document.addEventListener('keydown', (e) => { try { handleTabIndent(e) } catch {} }, true)
     } catch {}

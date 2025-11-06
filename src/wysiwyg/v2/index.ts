@@ -366,10 +366,58 @@ async function renderMermaidInto(el: HTMLDivElement, code: string) {
     // 所见模式：静默 mermaid 内部错误与日志，避免在输入中提示干扰
     try { (mermaid as any).parseError = () => {} } catch {}
     try { if ((mermaid as any).mermaidAPI) (mermaid as any).mermaidAPI.parseError = () => {} } catch {}
-    try { mermaid.initialize?.({ startOnLoad: false, securityLevel: 'loose', theme: 'default', logLevel: 'fatal' as any }) } catch {}
+    try {
+      mermaid.initialize?.({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme: 'default',
+        logLevel: 'fatal' as any,
+        fontSize: 16 as any,
+        flowchart: { useMaxWidth: true } as any,
+        themeVariables: { fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif', fontSize: '16px' } as any,
+      })
+    } catch {}
     const id = 'mmd-' + Math.random().toString(36).slice(2)
     const { svg } = await mermaid.render(id, code || '')
     el.innerHTML = svg
+    try {
+      const svgEl = el.firstElementChild as SVGElement | null
+      if (svgEl) {
+        try { (svgEl.style as any).display = 'block'; (svgEl.style as any).maxWidth = '100%'; (svgEl.style as any).height = 'auto' } catch {}
+        try { if (!svgEl.getAttribute('preserveAspectRatio')) svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet') } catch {}
+        try {
+          const vb = svgEl.getAttribute('viewBox') || ''
+          if (!/(\d|\s)\s*(\d|\s)/.test(vb)) {
+            const w = parseFloat(svgEl.getAttribute('width') || '')
+            const h = parseFloat(svgEl.getAttribute('height') || '')
+            if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`)
+          }
+        } catch {}
+        try { if (svgEl.hasAttribute('width')) svgEl.removeAttribute('width') } catch {}
+        try { if (svgEl.hasAttribute('height')) svgEl.removeAttribute('height') } catch {}
+        setTimeout(() => {
+          try {
+            const bb = (svgEl as any).getBBox ? (svgEl as any).getBBox() : null
+            if (bb && bb.width > 0 && bb.height > 0) {
+              const pad = (() => { try { return Math.max(2, Math.min(24, Math.round(Math.max(bb.width, bb.height) * 0.02))) } catch { return 8 } })()
+              const vx = Math.floor(bb.x) - pad
+              const vy = Math.floor(bb.y) - pad
+              const vw = Math.ceil(bb.width) + pad * 2
+              const vh = Math.ceil(bb.height) + pad * 2
+              svgEl.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`)
+              const host = el.parentElement as HTMLElement | null
+              const pbW = Math.max(0, host?.clientWidth || el.clientWidth || 0)
+              const targetW = vw
+              let scale = 0.75
+              try { const sv = localStorage.getItem('flymd:mermaidScale'); const n = sv ? parseFloat(sv) : NaN; if (Number.isFinite(n) && n > 0) scale = n } catch {}
+              const base = pbW > 0 ? Math.min(pbW, targetW) : targetW
+              const finalW = Math.max(10, Math.round(base * scale))
+              ;(svgEl.style as any).width = finalW + 'px'
+            }
+          } catch {}
+        }, 0)
+      }
+    } catch {}
   } catch (e) {
     // 所见模式：隐藏渲染失败提示（保持空内容，不覆盖底下的源码输入）
     try { el.innerHTML = '' } catch {}

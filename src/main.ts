@@ -59,6 +59,26 @@ let katexCssLoaded = false
 let hljsLoaded = false
 let mermaidReady = false
 // Mermaid 渲染缓存（按源代码文本缓存 SVG，避免重复渲染导致布局抖动）
+// Mermaid 缓存开关：默认暂时关闭缓存以排查“图片很小”的问题；可用 localStorage 覆盖
+const DISABLE_MERMAID_CACHE_DEFAULT = true
+function isMermaidCacheDisabled(): boolean {
+  try {
+    const v = localStorage.getItem('flymd:disableMermaidCache')
+    if (v === '1' || (v || '').toLowerCase() === 'true') return true
+    if (v === '0' || (v || '').toLowerCase() === 'false') return false
+  } catch {}
+  return DISABLE_MERMAID_CACHE_DEFAULT
+}
+
+function getMermaidScale(): number {
+  try {
+    const v = localStorage.getItem('flymd:mermaidScale')
+    const n = v ? parseFloat(v) : NaN
+    if (Number.isFinite(n) && n > 0 && n < 10) return n
+  } catch {}
+  // 默认缩放改为 0.75
+  return 0.75
+}
 const mermaidSvgCache = new Map<string, { svg: string; renderId: string }>()
 let mermaidSvgCacheVersion = 0
 // 当前 PDF 预览 URL（iframe 使用），用于页内跳转
@@ -254,6 +274,7 @@ function hashMermaidCode(code: string): string {
 
 function getCachedMermaidSvg(code: string, desiredId: string): string | null {
   try {
+    if (isMermaidCacheDisabled()) return null
     const cached = mermaidSvgCache.get(code)
     if (!cached || !cached.renderId || !cached.svg) return null
     if (!cached.svg.includes('<svg')) return null
@@ -266,8 +287,58 @@ function getCachedMermaidSvg(code: string, desiredId: string): string | null {
 
 function cacheMermaidSvg(code: string, svg: string, renderId: string) {
   try {
+    if (isMermaidCacheDisabled()) return
     if (!code || !svg || !renderId) return
     mermaidSvgCache.set(code, { svg, renderId })
+  } catch {}
+}
+
+// 规范化 Mermaid 生成的 SVG：保证在不同环境下按容器宽度自适应
+function normalizeMermaidSvg(svgEl: SVGElement) {
+  try {
+    try { (svgEl.style as any).display = 'block'; (svgEl.style as any).maxWidth = '100%'; (svgEl.style as any).height = 'auto'; (svgEl.style as any).overflow = 'visible' } catch {}
+    try { if (!svgEl.getAttribute('preserveAspectRatio')) svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet') } catch {}
+    try {
+      const vb = svgEl.getAttribute('viewBox') || ''
+      if (!/(\d|\s)\s*(\d|\s)/.test(vb)) {
+        const w = parseFloat(svgEl.getAttribute('width') || '')
+        const h = parseFloat(svgEl.getAttribute('height') || '')
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`)
+      }
+    } catch {}
+    try { if (svgEl.hasAttribute('width')) svgEl.removeAttribute('width') } catch {}
+    try { if (svgEl.hasAttribute('height')) svgEl.removeAttribute('height') } catch {}
+  } catch {}
+}
+
+// 插入到 DOM 之后再做一次自适应校正：
+// 如果 viewBox 非常大而容器较小，强制用实际内容 bbox 重置 viewBox，避免“看起来很小”。
+function postAttachMermaidSvgAdjust(svgEl: SVGElement) {
+  try {
+    // 放到 DOM 后统一用内容 bbox 重置 viewBox，确保按内容尺寸自适应
+    setTimeout(() => {
+      try {
+        const bb = (svgEl as any).getBBox ? (svgEl as any).getBBox() : null
+        if (bb && isFinite(bb.width) && isFinite(bb.height) && bb.width > 0 && bb.height > 0) {
+          const pad = (() => { try { return Math.max(2, Math.min(24, Math.round(Math.max(bb.width, bb.height) * 0.02))) } catch { return 8 } })()
+          const vx = Math.floor(bb.x) - pad
+          const vy = Math.floor(bb.y) - pad
+          const vw = Math.ceil(bb.width) + pad * 2
+          const vh = Math.ceil(bb.height) + pad * 2
+          svgEl.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`)
+          // 宽度采用“内容宽度与容器宽度取最小”，避免过大或过小
+          try {
+            const pb = (svgEl.closest('.preview-body') as HTMLElement | null) || (svgEl.parentElement as HTMLElement | null)
+            const pbW = Math.max(0, pb?.clientWidth || 0)
+            const targetW = vw
+            const scale = getMermaidScale()
+            const base = pbW > 0 ? Math.min(Math.ceil(pbW), targetW) : targetW
+            const finalW = Math.max(10, Math.round(base * (Number.isFinite(scale) && scale > 0 ? scale : 1)))
+            ;(svgEl.style as any).width = finalW + 'px'
+          } catch {}
+        }
+      } catch {}
+    }, 0)
   } catch {}
 }
 
@@ -282,6 +353,32 @@ function invalidateMermaidSvgCache(reason?: string) {
 try {
   if (typeof window !== 'undefined') {
     ;(window as any).invalidateMermaidSvgCache = invalidateMermaidSvgCache
+    ;(window as any).isMermaidCacheDisabled = () => { try { return isMermaidCacheDisabled() } catch { return true } }
+    ;(window as any).setDisableMermaidCache = (v: boolean) => {
+      try { localStorage.setItem('flymd:disableMermaidCache', v ? '1' : '0') } catch {}
+      try { invalidateMermaidSvgCache('toggle disable mermaid cache') } catch {}
+      try { if (mode === 'preview') { void renderPreview() } else if (wysiwyg) { scheduleWysiwygRender() } } catch {}
+    }
+    ;(window as any).setMermaidScale = (n: number) => {
+      try { const v = (!Number.isFinite(n) || n <= 0) ? '1' : String(n); localStorage.setItem('flymd:mermaidScale', v) } catch {}
+      try { if (mode === 'preview') { void renderPreview() } else if (wysiwyg) { scheduleWysiwygRender() } } catch {}
+    }
+    try { if (isMermaidCacheDisabled()) invalidateMermaidSvgCache('startup: cache disabled') } catch {}
+
+    // 动态注入一条 CSS，确保 Mermaid SVG 在所有环境中自适应父容器宽度
+    try {
+      const id = 'flymd-mermaid-responsive-style'
+      if (!document.getElementById(id)) {
+        const style = document.createElement('style')
+        style.id = id
+        style.textContent = [
+          '.preview-body svg[data-mmd-hash],',
+          '.preview-body .mermaid svg,',
+          '.preview-body svg { display:block; max-width:100%; height:auto; }'
+        ].join('\n')
+        document.head.appendChild(style)
+      }
+    } catch {}
   }
 } catch {}
 
@@ -2149,6 +2246,7 @@ async function renderPreview() {
     } catch {}
     try {
       const codeBlocks = buf.querySelectorAll('pre > code.language-mermaid') as NodeListOf<HTMLElement>
+      try { console.log('[预处理] language-mermaid 代码块数量:', codeBlocks.length) } catch {}
       codeBlocks.forEach((code) => {
         try {
           const pre = code.parentElement as HTMLElement
@@ -2162,6 +2260,7 @@ async function renderPreview() {
     } catch {}
     try {
       const preMermaid = buf.querySelectorAll('pre.mermaid')
+      try { console.log('[预处理] pre.mermaid 元素数量:', preMermaid.length) } catch {}
       preMermaid.forEach((pre) => {
         try {
           const text = pre.textContent || ''
@@ -2174,10 +2273,25 @@ async function renderPreview() {
     } catch {}
     try {
       const nodes = Array.from(buf.querySelectorAll('.mermaid')) as HTMLElement[]
+      try { console.log('[预处理] 准备渲染 Mermaid 节点:', nodes.length) } catch {}
       if (nodes.length > 0) {
         let mermaid: any
         try { mermaid = (await import('mermaid')).default } catch (e1) { try { mermaid = (await import('mermaid/dist/mermaid.esm.mjs')).default } catch (e2) { throw e2 } }
-        if (!mermaidReady) { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default' }); mermaidReady = true }
+        if (!mermaidReady) {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'default',
+            logLevel: 'fatal' as any,
+            fontSize: 16 as any,
+            flowchart: { useMaxWidth: true } as any,
+            themeVariables: {
+              fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+              fontSize: '16px'
+            } as any
+          });
+          mermaidReady = true
+        }
         for (let i = 0; i < nodes.length; i++) {
           const el = nodes[i]
           const code = el.textContent || ''
@@ -2195,8 +2309,10 @@ async function renderPreview() {
             wrap.innerHTML = svgMarkup || ''
             const svgEl = wrap.firstElementChild as SVGElement | null
             if (svgEl) {
+              try { normalizeMermaidSvg(svgEl) } catch {}
               if (!svgEl.id) svgEl.id = desiredId
               el.replaceWith(svgEl)
+              try { postAttachMermaidSvgAdjust(svgEl) } catch {}
             }
           } catch {}
         }
@@ -2403,13 +2519,37 @@ async function renderPreview() {
       } catch {}
       if (!mermaidReady) {
         // 初始化 Mermaid；所见模式下降低日志级别，避免错误信息干扰输入体验
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: 'fatal' as any })
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'default',
+          logLevel: 'fatal' as any,
+          fontSize: 16 as any,
+          flowchart: { useMaxWidth: true } as any,
+          themeVariables: {
+            fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+            fontSize: '16px'
+          } as any
+        })
         mermaidReady = true
         console.log('Mermaid 已初始化')
         try { decorateCodeBlocks(preview) } catch {}
       } else {
         // 已初始化时，动态调整日志级别（切换所见/预览模式时生效）
-        try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', logLevel: 'fatal' as any }) } catch {}
+        try {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'default',
+            logLevel: 'fatal' as any,
+            fontSize: 16 as any,
+            flowchart: { useMaxWidth: true } as any,
+            themeVariables: {
+              fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+              fontSize: '16px'
+            } as any
+          })
+        } catch {}
       }
       for (let i = 0; i < nodes.length; i++) {
         const el = nodes[i]
@@ -2434,11 +2574,12 @@ async function renderPreview() {
           wrap.innerHTML = svgMarkup || ''
           const svgEl = wrap.firstElementChild as SVGElement | null
           console.log(`Mermaid 图表 ${i + 1} SVG 元素:`, svgEl?.tagName, svgEl?.getAttribute('viewBox'))
-          if (svgEl) {
+          if (svgEl) { try { normalizeMermaidSvg(svgEl) } catch {}
             svgEl.setAttribute('data-mmd-hash', hash)
             svgEl.setAttribute('data-mmd-cache', cacheHit ? 'hit' : 'miss')
             if (!svgEl.id) svgEl.id = desiredId
             el.replaceWith(svgEl)
+                        try { postAttachMermaidSvgAdjust(svgEl) } catch {}
             console.log(`Mermaid 图表 ${i + 1} 已插入 DOM（${cacheHit ? '缓存命中' : '新渲染'}）`)
             setTimeout(() => {
               const check = document.querySelector(`#${svgEl.id}`)
@@ -6637,6 +6778,9 @@ async function loadAndActivateEnabledPlugins(): Promise<void> {
 
 // 将所见模式开关暴露到全局，便于在 WYSIWYG V2 覆盖层中通过双击切换至源码模式
 try { (window as any).flymdSetWysiwygEnabled = async (enable: boolean) => { try { await setWysiwygEnabled(enable) } catch (e) { console.error('flymdSetWysiwygEnabled 调用失败', e) } } } catch {}
+
+
+
 
 
 

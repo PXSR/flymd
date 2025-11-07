@@ -2482,6 +2482,8 @@ async function renderPreview() {
         el.addEventListener('error', onError, { once: true })
 
         const url = typeof convertFileSrc === 'function' ? convertFileSrc(abs) : abs
+          try { (el as any).setAttribute('data-abs-path', abs) } catch {}
+          try { if (typeof src === 'string') (el as any).setAttribute('data-raw-src', src) } catch {}
         el.src = url
       } catch {}
     })

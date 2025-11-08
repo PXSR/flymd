@@ -1,6 +1,6 @@
 import { readDir, stat, mkdir, rename, remove, exists, writeTextFile, writeFile, readFile, watchImmediate } from '@tauri-apps/plugin-fs'
 import { t } from './i18n'
-import appIconUrl from '../flymd.png?url'
+import appIconUrl from '../Flymdnew.png?url'
 
 export type FileTreeOptions = {
   // 获取库根目录（未设置时返回 null）

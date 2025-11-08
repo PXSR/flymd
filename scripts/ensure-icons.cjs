@@ -10,7 +10,7 @@ const projectRoot = process.cwd();
 const iconsDir = path.join(projectRoot, 'src-tauri', 'icons');
 const iconPng = path.join(iconsDir, 'icon.png');
 const iconIco = path.join(iconsDir, 'icon.ico');
-const source = path.join(projectRoot, 'flymd.png');
+const source = path.join(projectRoot, 'Flymdnew.png');
 
 function getPngSize(file) {
   try {

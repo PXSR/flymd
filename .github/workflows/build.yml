@@ -78,8 +78,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Generate icons from flymd.png
-        run: npx tauri icon ./flymd.png
+      - name: Generate icons from Flymdnew.png
+        run: npx tauri icon ./Flymdnew.png
       - name: Install macOS DMG toolchain
         if: startsWith(matrix.platform, 'macos-')
         run: |

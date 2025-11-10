@@ -44,6 +44,8 @@ function gid(){ return 's_' + Math.random().toString(36).slice(2,10) }
 function clampCtx(s, n) { const t = String(s || ''); return t.length > n ? t.slice(t.length - n) : t }
 
 function el(id) { return document.getElementById(id) }
+function lastUserMsg() { try { const arr = __AI_SESSION__.messages; for (let i = arr.length - 1; i >= 0; i--) { if (arr[i].role === 'user') return String(arr[i].content || '') } } catch {} return '' }
+function shorten(s, n){ const t = String(s||'').trim(); return t.length>n? (t.slice(0,n)+'…') : t }
 
 // 追加一段样式，使用独立命名空间，避免污染宿主
 function ensureCss() {
@@ -167,6 +169,59 @@ async function ensureSessionForDoc(context) {
   const cur = bucket.items.find(it => it.id === bucket.activeId)
   __AI_SESSION__ = { id: cur.id, name: cur.name, messages: cur.messages.slice(), docHash: hash, docTitle: title }
   await saveSessionsDB(context)
+}
+
+async function syncCurrentSessionToDB(context){
+  try {
+    if (!__AI_DB__) await loadSessionsDB(context)
+    const bucket = __AI_DB__.byDoc[__AI_SESSION__.docHash]
+    if (!bucket) return
+    const it = bucket.items.find(x => x.id === bucket.activeId)
+    if (!it) return
+    it.messages = __AI_SESSION__.messages.slice()
+    it.updated = Date.now()
+    await saveSessionsDB(context)
+    await refreshSessionSelect(context)
+  } catch {}
+}
+
+function isDefaultSessionName(name){
+  const s = String(name||'').trim()
+  if (!s) return true
+  if (s === '默认会话' || s === '默认' || s === '未命名') return true
+  if (/^会话\s*\d+$/i.test(s)) return true
+  if (/^新建?会话$/i.test(s)) return true
+  return false
+}
+
+async function maybeNameCurrentSession(context, cfg, assistantText){
+  try {
+    if (!__AI_DB__) await loadSessionsDB(context)
+    const bucket = __AI_DB__.byDoc[__AI_SESSION__.docHash]
+    const it = bucket && bucket.items.find(x => x.id === bucket.activeId)
+    if (!it || !isDefaultSessionName(it.name)) return
+    // 构造命名提示：优先基于文件名/文档标题/最后一次用户输入
+    const base = __AI_SESSION__.docTitle || ''
+    const lastQ = lastUserMsg()
+    const sample = shorten(lastQ || assistantText || '', 80)
+    const sys = '你是命名助手。任务：基于上下文，为对话生成一个简短的中文名称。要求：5-12个中文字符以内，不要标点、不要引号、不要编号。只输出名称本身。'
+    const prompt = `文件/标题：${base}\n线索：${sample}`
+    const url = (cfg.baseUrl||'https://api.openai.com/v1').replace(/\/$/, '') + '/chat/completions'
+    const headers = { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + cfg.apiKey }
+    const body = JSON.stringify({ model: cfg.model, stream: false, messages: [ { role:'system', content: sys }, { role:'user', content: prompt } ] })
+    let name = ''
+    try {
+      const r = await fetch(url, { method:'POST', headers, body })
+      const t = await r.text()
+      const j = t? JSON.parse(t):null
+      name = shorten(j?.choices?.[0]?.message?.content || '', 12).replace(/[\s\n]+/g,'').replace(/[「」\[\]\(\)\{\}\"\'\.,，。!！?？:：;；]/g,'')
+    } catch {}
+    if (!name) return
+    it.name = name
+    await saveSessionsDB(context)
+    await refreshSessionSelect(context)
+    try { context.ui.notice('会话已命名：' + name, 'ok', 1600) } catch {}
+  } catch {}
 }
 
 async function updateWindowTitle(context) {
@@ -407,6 +462,7 @@ async function sendFromInput(context){
   ta.value = ''
   await ensureSessionForDoc(context)
   pushMsg('user', text)
+  await syncCurrentSessionToDB(context)
   renderMsgs(el('ai-chat'))
   await doSend(context)
 }
@@ -483,13 +539,9 @@ async function doSend(context){
     renderMsgs(el('ai-chat'))
     // 同步会话库：写回当前文档的 active 会话
     try {
-      await ensureSessionForDoc(context)
-      if (!__AI_DB__) await loadSessionsDB(context)
-      const bucket = __AI_DB__.byDoc[__AI_SESSION__.docHash]
-      const it = bucket.items.find(x => x.id === bucket.activeId)
-      if (it) { it.messages = __AI_SESSION__.messages.slice(); it.updated = Date.now() }
-      await saveSessionsDB(context)
+      await syncCurrentSessionToDB(context)
     } catch {}
+    try { await maybeNameCurrentSession(context, cfg, finalText) } catch {}
     try { const elw = el('ai-assist-win'); if (elw) autoFitWindow(context, elw) } catch {}
   } catch (e) {
     console.error(e)

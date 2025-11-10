@@ -833,6 +833,7 @@ body > .block-menu { display: none !important; }
   position: absolute;
   top: 6px; right: 6px;
   display: inline-flex;
+  flex-direction: column;
   gap: 4px;
   padding: 2px;
   border-radius: 6px;
@@ -843,6 +844,7 @@ body > .block-menu { display: none !important; }
   pointer-events: auto;
   backdrop-filter: blur(2px);
 }
+.mmd-tools .tools-row { display: inline-flex; gap: 4px; justify-content: flex-end; }
 .mmd-tools button {
   min-width: 20px; height: 20px;
   padding: 0 6px;

@@ -159,21 +159,100 @@ function adjustExistingMermaidSvgsForScale(): void {
   } catch {}
 }
 
-function createMermaidTools(): HTMLDivElement {
+async function exportMermaidViaDialog(svgEl: SVGElement): Promise<void> {
+  try {
+    const getDims = (): { vw: number; vh: number } => {
+      try {
+        const vb = (svgEl.getAttribute('viewBox') || '').trim().split(/\s+/)
+        const vw = parseFloat(vb[2] || '')
+        const vh = parseFloat(vb[3] || '')
+        if (Number.isFinite(vw) && Number.isFinite(vh) && vw > 0 && vh > 0) return { vw, vh }
+      } catch {}
+      try { const bb = (svgEl as any).getBBox ? (svgEl as any).getBBox() : null; if (bb && bb.width > 0 && bb.height > 0) return { vw: bb.width, vh: bb.height } } catch {}
+      return { vw: 800, vh: 600 }
+    }
+    const dims = getDims()
+    const scale = (() => { try { const n = getMermaidScale(); return (Number.isFinite(n) && n > 0) ? n : 1 } catch { return 1 } })()
+    const pngW = Math.max(10, Math.round(dims.vw * scale))
+    const pngH = Math.max(10, Math.round(dims.vh * scale))
+
+    const path = await save({
+      defaultPath: 'mermaid.svg',
+      filters: [ { name: 'SVG', extensions: ['svg'] } ] as any
+    } as any)
+    if (!path) return
+    const lower = String(path).toLowerCase()
+    const fmt: 'svg' | 'png' = 'svg'
+
+    if (fmt === 'svg') {
+      const clone = svgEl.cloneNode(true) as SVGElement
+      try { if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg') } catch {}
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` + new XMLSerializer().serializeToString(clone)
+      await writeTextFile(path, xml)
+    } else {
+      const clone = svgEl.cloneNode(true) as SVGElement
+      try { if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg') } catch {}
+      const svgText = new XMLSerializer().serializeToString(clone)
+      const canvas = document.createElement('canvas')
+      canvas.width = pngW
+      canvas.height = pngH
+      const ctx = canvas.getContext('2d')!
+      try {
+        const mod: any = await import('canvg')
+        const Canvg = (mod && (mod.Canvg || (mod.default && mod.default.Canvg))) ? (mod.Canvg || mod.default.Canvg) : (mod.Canvg || mod.default)
+        const v = await Canvg.fromString(ctx, svgText, { ignoreMouse: true, ignoreAnimation: true, useCORS: true })
+        await v.render()
+      } catch (e) {
+        // 兜底：如 canvg 不可用，回退到 Image 路线（可能受安全限制）
+        try {
+          const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const img = new Image()
+          await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = (err) => reject(err); img.src = url })
+          try { URL.revokeObjectURL(url) } catch {}
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        } catch (e2) {
+          console.error('导出 PNG 回退失败', e2)
+          throw e
+        }
+      }
+      const dataUrl = canvas.toDataURL('image/png')
+      const b64 = dataUrl.split(',')[1] || ''
+      const bin = atob(b64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      await writeFile(path, bytes)
+    }
+  } catch (e) {
+    console.error('导出 Mermaid 失败', e)
+  }
+}
+
+function createMermaidToolsFor(svgEl: SVGElement): HTMLDivElement {
   const tools = document.createElement('div')
   tools.className = 'mmd-tools'
+  const row1 = document.createElement('div')
+  row1.className = 'tools-row'
+  const row2 = document.createElement('div')
+  row2.className = 'tools-row'
   const btnOut = document.createElement('button')
   btnOut.textContent = '-'
   const btnIn = document.createElement('button')
   btnIn.textContent = '+'
   const btnReset = document.createElement('button')
   btnReset.textContent = 'R'
-  tools.appendChild(btnOut)
-  tools.appendChild(btnIn)
-  tools.appendChild(btnReset)
+  row1.appendChild(btnOut)
+  row1.appendChild(btnIn)
+  row1.appendChild(btnReset)
+  const btnExport = document.createElement('button')
+  btnExport.textContent = 'export'
+  row2.appendChild(btnExport)
+  tools.appendChild(row1)
+  tools.appendChild(row2)
   try { btnOut.title = 'Mermaid 缩小' } catch {}
   try { btnIn.title = 'Mermaid 放大' } catch {}
   try { btnReset.title = 'Mermaid 重置为100%' } catch {}
+  try { btnExport.title = '导出（SVG）' } catch {}
   const step = MERMAID_SCALE_STEP
   btnOut.addEventListener('click', (ev) => { ev.stopPropagation(); try {
     const cur = getMermaidScale(); const next = Math.max(MERMAID_SCALE_MIN, Math.round((cur - step) * 100) / 100)
@@ -186,6 +265,10 @@ function createMermaidTools(): HTMLDivElement {
   btnReset.addEventListener('click', (ev) => { ev.stopPropagation(); try {
     const next = 1.0
     ;(window as any).setMermaidScale ? (window as any).setMermaidScale(next) : setMermaidScaleClamped(next)
+  } catch {} })
+  btnExport.addEventListener('click', (ev) => { ev.stopPropagation(); try {
+    const el = svgEl || (tools.closest('.mmd-figure')?.querySelector('svg') as SVGElement | null)
+    if (el) void exportMermaidViaDialog(el)
   } catch {} })
   return tools
 }
@@ -474,6 +557,10 @@ try {
       try { adjustExistingMermaidSvgsForScale() } catch {}
     }
     try { if (isMermaidCacheDisabled()) invalidateMermaidSvgCache('startup: cache disabled') } catch {}
+
+    // 暴露创建工具条与导出能力给所见模式插件使用
+    try { ;(window as any).createMermaidToolsFor = (svg: SVGElement) => createMermaidToolsFor(svg) } catch {}
+    try { ;(window as any).exportMermaidFromElement = (svg: SVGElement, fmt?: 'svg'|'png') => { if (!svg) return; if (fmt) { if (fmt === 'svg') { void (async()=>{ const clone = svg.cloneNode(true) as SVGElement; if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns','http://www.w3.org/2000/svg'); const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` + new XMLSerializer().serializeToString(clone); const p = await save({ defaultPath: 'mermaid.svg', filters: [{name:'SVG',extensions:['svg']}] as any } as any); if (p) await writeTextFile(p, xml) })(); } else { void exportMermaidViaDialog(svg) } } else { void exportMermaidViaDialog(svg) } } } catch {}
 
     // 动态注入一条 CSS，确保 Mermaid SVG 在所有环境中自适应父容器宽度
     try {
@@ -2556,7 +2643,7 @@ async function renderPreview() {
               const fig = document.createElement('div')
               fig.className = 'mmd-figure'
               fig.appendChild(svgEl)
-              try { fig.appendChild(createMermaidTools()) } catch {}
+              try { fig.appendChild(createMermaidToolsFor(svgEl)) } catch {}
               el.replaceWith(fig)
               try { postAttachMermaidSvgAdjust(svgEl) } catch {}
             }
@@ -2829,7 +2916,7 @@ async function renderPreview() {
             const fig = document.createElement('div')
             fig.className = 'mmd-figure'
             fig.appendChild(svgEl)
-            try { fig.appendChild(createMermaidTools()) } catch {}
+            try { fig.appendChild(createMermaidToolsFor(svgEl)) } catch {}
             el.replaceWith(fig)
             try { postAttachMermaidSvgAdjust(svgEl) } catch {}
             console.log(`Mermaid 图表 ${i + 1} 已插入 DOM（${cacheHit ? '缓存命中' : '新渲染'}）`)

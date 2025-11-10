@@ -37,19 +37,13 @@ async function renderMermaid(container: HTMLElement, code: string) {
       const fig = document.createElement('div')
       fig.className = 'mmd-figure'
       fig.appendChild(svgEl)
-      // 工具条：- / + / R（调用全局 setMermaidScale）
-      const tools = document.createElement('div')
-      tools.className = 'mmd-tools'
-      const mkBtn = (txt: string, title: string) => { const b = document.createElement('button'); b.textContent = txt; b.title = title; return b }
-      const btnOut = mkBtn('-', 'Mermaid 缩小')
-      const btnIn = mkBtn('+', 'Mermaid 放大')
-      const btnReset = mkBtn('R', 'Mermaid 重置为100%')
-      tools.appendChild(btnOut); tools.appendChild(btnIn); tools.appendChild(btnReset)
-      const callSet = (n: number) => { try { const w: any = window as any; if (w.setMermaidScale) w.setMermaidScale(n) } catch {} }
-      btnOut.addEventListener('click', (ev) => { ev.stopPropagation(); try { const v = (Number.parseFloat(localStorage.getItem('flymd:mermaidScale') || '1')||1)-0.1; callSet(Math.max(0.3, Math.round(v*100)/100)) } catch {} })
-      btnIn.addEventListener('click', (ev) => { ev.stopPropagation(); try { const v = (Number.parseFloat(localStorage.getItem('flymd:mermaidScale') || '1')||1)+0.1; callSet(Math.min(3.0, Math.round(v*100)/100)) } catch {} })
-      btnReset.addEventListener('click', (ev) => { ev.stopPropagation(); try { callSet(1.0) } catch {} })
-      fig.appendChild(tools)
+      try {
+        const mk: any = (window as any).createMermaidToolsFor
+        if (typeof mk === 'function') {
+          const tools = mk(svgEl)
+          if (tools) fig.appendChild(tools)
+        }
+      } catch {}
       container.appendChild(fig)
     }
 

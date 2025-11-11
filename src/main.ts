@@ -1973,10 +1973,7 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
                   <p>一款跨平台、轻量稳定好用的 Markdown 编辑与PDF阅读工具。</p>
                   <p style="margin:6px 0 0;color:var(--muted);font-size:12px;">开源协议：非商业开源（NC 1.0）。商业使用需授权。</p>
                   <p style="margin:4px 0 0;"><a href="https://github.com/flyhunterl/flymd/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">查看完整许可文本</a></p>
-                  <div class="about-links" style="margin-top:6px;">
-                    <p>个人网站：<a href="https://www.llingfei.com" target="_blank" rel="noopener noreferrer">https://www.llingfei.com</a></p>
-                    <p>GitHub：<a href="https://github.com/flyhunterl/flymd" target="_blank" rel="noopener noreferrer">https://github.com/flyhunterl/flymd</a></p>
-                  </div>
+                  
                 </div>
               </div>
             `
@@ -1996,8 +1993,7 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
                   <div style="text-align:center;">
                     <p style="margin:6px 0 0;color:var(--muted);font-size:12px;">${t('about.license.brief')}</p>
                     <p style="margin:4px 0 0;"><a href="https://github.com/flyhunterl/flymd/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">${t('about.license.link')}</a></p>
-                    <p style="margin:6px 0 0;">${t('about.blog')}<a href="https://www.llingfei.com" target="_blank" rel="noopener noreferrer">https://www.llingfei.com</a></p>
-                    <p style="margin:2px 0 0;">${t('about.github')}<a href="https://github.com/flyhunterl/flymd" target="_blank" rel="noopener noreferrer">https://github.com/flyhunterl/flymd</a></p>
+                    
                   </div>
                 </div>
               `
@@ -2011,6 +2007,9 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
       const footer = document.createElement('div')
       footer.className = 'about-footer'
       footer.innerHTML = '<div class="about-footer-links">\
+<a href="https://flymd.llingfei.com/" target="_blank" rel="noopener noreferrer">\
+  <img class="favicon" src="https://icons.duckduckgo.com/ip3/flymd.llingfei.com.ico" alt="" referrerpolicy="no-referrer"/>官方网站\
+</a><span class="sep">&nbsp;&nbsp;</span>\
 <a href="https://www.llingfei.com" target="_blank" rel="noopener noreferrer">\
   <img class="favicon" src="https://icons.duckduckgo.com/ip3/www.llingfei.com.ico" alt="" referrerpolicy="no-referrer"/>博客\
 </a><span class="sep">&nbsp;&nbsp;</span>\

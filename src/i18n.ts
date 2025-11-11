@@ -71,6 +71,7 @@ const dict = {
     'about.close': '关闭',
     'about.license.brief': '开源协议：非商业开源（NC 1.0）。商业使用需授权。',
     'about.license.link': '查看完整许可文本',
+    'about.official': '官方网站',
     'about.blog': '个人网站：',
     'about.github': 'GitHub：',
 
@@ -227,6 +228,7 @@ const dict = {
     'about.close': 'Close',
     'about.license.brief': 'License: Non‑Commercial Open (NC 1.0). Commercial use requires authorization.',
     'about.license.link': 'View full license',
+    'about.official': 'Official Site',
     'about.blog': 'Website: ',
     'about.github': 'GitHub: ',
 

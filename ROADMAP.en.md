@@ -1,10 +1,12 @@
-# Roadmap
+﻿# Roadmap
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
 ## Update v0.2.5 (upcoming)
 - Added: Mermaid zoom support in Reading/WYSIWYG modes
 - Added: Export Mermaid as standalone SVG
+- Improved: Handle array returns from open dialogs; fixes some macOS cases where files failed to load on open
+- Improved: Register native macOS menu events to ensure the system menu also triggers the open flow
 
 ## Update v0.2.4
 - Added: Editor/Plugin APIs to empower AI extensions (insert at cursor, streaming output, replace selection)
@@ -28,6 +30,7 @@
 ## Update v0.2.0
 - Added: Theme and background color customization/extension API
 - Added: Image hosting conversion & compression, with on/off switch and quality controls
+- Fixed: macOS path escaping issue causing files not to load when opened (app launched but document not loaded)
 - Improved: Added background color to Reading mode to visually distinguish it from Edit mode
 - Improved: Image hosting uploads switched to WebP format to better suit network usage
 

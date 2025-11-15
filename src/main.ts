@@ -2330,14 +2330,15 @@ function refreshTitle() {
   try { void getCurrentWindow().setTitle(osTitle).catch(() => {}) } catch {}
 }
 
-// 更新状态栏（行列）
+// 更新状态栏（行列字）
 function refreshStatus() {
   const pos = editor.selectionStart
   const until = editor.value.slice(0, pos)
   const lines = until.split(/\n/)
   const row = lines.length
   const col = (lines[lines.length - 1] || '').length + 1
-  status.textContent = fmtStatus(row, col)
+  const chars = editor.value.length
+  status.textContent = fmtStatus(row, col) + `, 字 ${chars}`
 }
 
 // 初始化存储（Tauri Store），失败则退化为内存模式

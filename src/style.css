@@ -263,8 +263,9 @@ html, body {
   background: var(--bg);
   padding: 20px 24px 40px 24px;
   box-sizing: border-box;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   letter-spacing: 0.01em;
+  /* 添加侧栏展开的过渡动画 */
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-top 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 编辑模式：定宽居中（与阅读/所见一致） */
@@ -286,6 +287,8 @@ html, body {
   font-size: 16px;
   line-height: 1.75;
   letter-spacing: 0.01em;
+  /* 添加侧栏展开的过渡动画 */
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-top 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .preview.hidden { display: none; }
 
@@ -380,7 +383,16 @@ html, body {
 
 /* 所见 V2：真实所见视图容器 */
 #md-wysiwyg-root, #md-wysiwyg-root * { box-sizing: border-box; }
-#md-wysiwyg-root { position: absolute; inset: 0; display: none; overflow-y: auto; overflow-x: hidden; z-index: 2; }
+#md-wysiwyg-root {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 2;
+  /* 添加侧栏展开的过渡动画 */
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .container.wysiwyg-v2 #md-wysiwyg-root { display: block; }
 .container.wysiwyg-v2-loading #md-wysiwyg-root { display: none; }
 .container.wysiwyg-v2 .editor { display: none; }
@@ -687,9 +699,11 @@ body > .block-menu { display: none !important; }
 
 /* 预览正文容器：定宽居中，类似 Typora/Word 的阅读宽度 */
 .preview-body {
-  max-width: 860px;   /* 可按需微调，例如 720/800/900 */
+  max-width: 860px;   /* 与所见模式一致 */
   margin: 0 auto;
-  padding: 20px 24px;
+  padding: 14px 16px 20px 16px; /* 与所见模式保持一致 */
+  /* 添加过渡动画，配合侧栏展开 */
+  transition: max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 文档库侧栏（阶段A：最小侵入） */
@@ -879,10 +893,17 @@ body > .block-menu { display: none !important; }
 
 /* 展示库时，为编辑/预览留出空间（不改动原有 DOM） */
 .container.with-library .editor,
-.container.with-library .preview { padding-left: 300px; }
+.container.with-library .preview {
+  padding-left: 300px;
+}
+
 /* 所见 V2 打开文档库侧栏时，避免编辑区被左侧面板覆盖 */
-.container.with-library #md-wysiwyg-root { left: 300px; width: calc(100% - 300px); }
-/* 所见 V2 在“固定库”模式下仍保持全宽，让库覆盖在上方，不挤压所见编辑区 */
+.container.with-library #md-wysiwyg-root {
+  left: 300px;
+  width: calc(100% - 300px);
+}
+
+/* 所见 V2 在"固定库"模式下仍保持全宽，让库覆盖在上方，不挤压所见编辑区 */
 .container.wysiwyg-v2.with-library #md-wysiwyg-root { left: 0; width: 100%; }
 
 .statusbar {

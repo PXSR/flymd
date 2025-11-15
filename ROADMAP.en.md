@@ -2,6 +2,13 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.3.1
+- Improved: Greatly improved startup and rendering performance
+> DOM ready: '16ms', first render: '262ms', app ready: '293ms', total: '293ms'
+- Improved: WebDAV sync calculation and comparison logic; added concurrent upload/download/scan to greatly speed up synchronization
+- Improved: Sync status is now displayed independently to avoid being interrupted by row/column status
+- Added: Word count information has been added to the row/column status
+
 ## Update v0.3.0
 - Improved Enhance window styles, add animation effects, and theme backgrounds
 

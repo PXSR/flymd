@@ -27,6 +27,8 @@ export interface ThemePrefs {
   monoFont?: string
   /** 编辑模式网格背景 */
   gridBackground?: boolean
+  /** 文件夹图标 */
+  folderIcon?: string
 }
 
 export interface ThemeDefinition {
@@ -127,6 +129,7 @@ export function loadThemePrefs(): ThemePrefs {
       bodyFont: (typeof obj.bodyFont === 'string') ? obj.bodyFont : undefined,
       monoFont: (typeof obj.monoFont === 'string') ? obj.monoFont : undefined,
       gridBackground: (typeof obj.gridBackground === 'boolean') ? obj.gridBackground : false,
+      folderIcon: (typeof obj.folderIcon === 'string') ? obj.folderIcon : '🗂️',
     }
   } catch { return { ...DEFAULT_PREFS } }
 }

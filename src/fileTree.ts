@@ -205,7 +205,28 @@ async function dirHasSupportedDocRecursive(dir: string, allow: Set<string>, dept
 }
 
 function makeTg(): HTMLElement { const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('viewBox','0 0 24 24'); s.classList.add('lib-tg'); const p=document.createElementNS('http://www.w3.org/2000/svg','path'); p.setAttribute('d','M9 6l6 6-6 6'); s.appendChild(p); return s as any }
-function makeFolderIcon(): HTMLElement { const span=document.createElement('span'); span.className='lib-ico lib-ico-folder'; span.textContent='🗂️'; span.style.fontSize='16px'; return span as any }
+function makeFolderIcon(path?: string): HTMLElement {
+  const span=document.createElement('span')
+  span.className='lib-ico lib-ico-folder'
+  // 优先使用单个文件夹的自定义图标，其次使用全局默认
+  let icon = '🗂️'
+  try {
+    if (path) {
+      const customIcons = JSON.parse(localStorage.getItem('flymd:folderIcons') || '{}')
+      if (customIcons[path]) icon = customIcons[path]
+      else {
+        const prefs = JSON.parse(localStorage.getItem('flymd:theme:prefs') || '{}')
+        if (prefs.folderIcon) icon = prefs.folderIcon
+      }
+    } else {
+      const prefs = JSON.parse(localStorage.getItem('flymd:theme:prefs') || '{}')
+      if (prefs.folderIcon) icon = prefs.folderIcon
+    }
+  } catch {}
+  span.textContent = icon
+  span.style.fontSize = '16px'
+  return span as any
+}
 
 async function buildDir(root: string, dir: string, parent: HTMLElement) {
   parent.innerHTML = ''
@@ -220,7 +241,7 @@ async function buildDir(root: string, dir: string, parent: HTMLElement) {
 
     if (e.isDir) {
       const tg = makeTg()
-      const ico = makeFolderIcon()
+      const ico = makeFolderIcon(e.path)
       row.appendChild(tg); row.appendChild(ico); row.appendChild(label)
       const kids = document.createElement('div')
       kids.className = 'lib-children'
@@ -497,7 +518,7 @@ async function renderRoot(root: string) {
   const topRow = document.createElement('div')
   topRow.className = 'lib-node lib-dir expanded'
   ;(topRow as any).dataset.path = root
-  const tg = makeTg(); const ico = makeFolderIcon(); const label = document.createElement('span'); label.className='lib-name'; label.textContent = nameOf(root) || root
+  const tg = makeTg(); const ico = makeFolderIcon(root); const label = document.createElement('span'); label.className='lib-name'; label.textContent = nameOf(root) || root
   topRow.appendChild(tg); topRow.appendChild(ico); topRow.appendChild(label)
   const kids = document.createElement('div')
   kids.className = 'lib-children'
@@ -637,6 +658,54 @@ async function conflictModal(title: string, actions: string[], defaultIndex = 1)
       })
       dom.style.display='flex'
     } catch { resolve(defaultIndex) }
+  })
+}
+
+// 24个可选图标
+export const FOLDER_ICONS = ['📁', '📂', '🗂️', '🗃️', '🗄️', '📚', '📖', '📕', '📗', '📘', '📙', '📓', '📔', '📋', '📑', '📦', '🎯', '⭐', '🔖', '💼', '🎨', '🔧', '⚙️', '🏠']
+
+export async function folderIconModal(folderName: string, icons: string[]): Promise<number | null> {
+  return await new Promise<number | null>((resolve) => {
+    try {
+      let dom = document.getElementById('folder-icon-modal') as HTMLDivElement | null
+      if (!dom) {
+        dom = document.createElement('div'); dom.id='folder-icon-modal'; dom.style.position='fixed'; dom.style.inset='0'; dom.style.background='rgba(0,0,0,0.35)'; dom.style.display='flex'; dom.style.alignItems='center'; dom.style.justifyContent='center'; dom.style.zIndex='9999'
+        const box = document.createElement('div'); box.className='ft-box'; box.style.background='var(--bg)'; box.style.color='var(--fg)'; box.style.border='1px solid var(--border)'; box.style.borderRadius='12px'; box.style.boxShadow='0 12px 36px rgba(0,0,0,0.2)'; box.style.minWidth='320px'; box.style.maxWidth='80vw'
+        const hd = document.createElement('div'); hd.style.padding='12px 16px'; hd.style.fontWeight='600'; hd.style.borderBottom='1px solid var(--border)'; box.appendChild(hd)
+        const bd = document.createElement('div'); bd.style.padding='14px 16px'; bd.style.display='grid'; bd.style.gridTemplateColumns='repeat(8, 1fr)'; bd.style.gap='8px'; box.appendChild(bd)
+        const ft = document.createElement('div'); ft.style.display='flex'; ft.style.gap='8px'; ft.style.justifyContent='flex-end'; ft.style.padding='8px 12px'; ft.style.borderTop='1px solid var(--border)'; box.appendChild(ft)
+        dom.appendChild(box)
+        document.body.appendChild(dom)
+      }
+      const box = dom.firstElementChild as HTMLDivElement
+      const hd = box.children[0] as HTMLDivElement
+      const bd = box.children[1] as HTMLDivElement
+      const ft = box.children[2] as HTMLDivElement
+      hd.textContent = `${folderName} - 选择图标`
+      bd.innerHTML = ''
+      icons.forEach((icon, idx) => {
+        const btn = document.createElement('button')
+        btn.textContent = icon
+        btn.style.fontSize = '24px'
+        btn.style.width = '48px'
+        btn.style.height = '48px'
+        btn.style.border = '1px solid var(--border)'
+        btn.style.borderRadius = '8px'
+        btn.style.background = 'rgba(127,127,127,0.04)'
+        btn.style.cursor = 'pointer'
+        btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(127,127,127,0.12)' })
+        btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(127,127,127,0.04)' })
+        btn.addEventListener('click', () => { dom!.style.display='none'; resolve(idx) })
+        bd.appendChild(btn)
+      })
+      ft.innerHTML = ''
+      const cancelBtn = document.createElement('button')
+      cancelBtn.textContent = '取消'
+      cancelBtn.style.border='1px solid var(--border)'; cancelBtn.style.borderRadius='8px'; cancelBtn.style.padding='6px 12px'; cancelBtn.style.background='rgba(127,127,127,0.08)'; cancelBtn.style.color='var(--fg)'
+      cancelBtn.addEventListener('click', () => { dom!.style.display='none'; resolve(null) })
+      ft.appendChild(cancelBtn)
+      dom.style.display='flex'
+    } catch { resolve(null) }
   })
 }
 

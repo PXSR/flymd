@@ -2,6 +2,40 @@
 // 展示 addContextMenuItem API 的各种用法
 
 export function activate(context) {
+  // 0. 测试菜单（无条件，始终显示，方便测试子菜单）
+  context.addContextMenuItem({
+    label: '测试子菜单',
+    icon: '🧪',
+    children: [
+      {
+        type: 'group',
+        label: '测试分组'
+      },
+      {
+        label: '选项 1',
+        note: '无条件',
+        onClick: () => {
+          context.ui.notice('点击了选项 1', 'ok');
+        }
+      },
+      {
+        label: '选项 2',
+        note: '无条件',
+        onClick: () => {
+          context.ui.notice('点击了选项 2', 'ok');
+        }
+      },
+      { type: 'divider' },
+      {
+        label: '选项 3',
+        icon: '✨',
+        onClick: () => {
+          context.ui.notice('点击了选项 3', 'ok');
+        }
+      }
+    ]
+  });
+
   // 1. 简单的文本转换菜单项（仅在有选中文本时显示）
   context.addContextMenuItem({
     label: '转换为大写',

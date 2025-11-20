@@ -953,6 +953,11 @@ function renderContextMenuItem(item: ContextMenuItemConfig, ctx: ContextMenuCont
       childrenHtml += renderContextMenuItem(child, ctx, callbacks, idCounter)
     }
 
+    // 如果子菜单为空（所有项都被条件过滤），显示提示
+    if (!childrenHtml.trim()) {
+      childrenHtml = '<div class="context-menu-item disabled" style="font-style:italic;opacity:0.6;">暂无可用选项</div>'
+    }
+
     return `
       <div class="context-menu-item has-children${disabled}" data-id="${id}">
         ${icon}<span class="context-menu-label">${item.label || ''}</span>${note}
@@ -1019,26 +1024,62 @@ function showContextMenu(x: number, y: number, ctx: ContextMenuContext) {
     menu.style.left = Math.min(x, maxX) + 'px'
     menu.style.top = Math.min(y, maxY) + 'px'
 
-    // 绑定点击事件
-    menu.querySelectorAll('.context-menu-item[data-id]').forEach((el) => {
-      const id = el.getAttribute('data-id')
+    // 动态调整子菜单位置，防止超出视口
+    // 为每个有子菜单的项目添加 mouseenter 事件来实时计算位置
+    menu.querySelectorAll('.context-menu-item.has-children').forEach((item) => {
+      item.addEventListener('mouseenter', function(this: HTMLElement) {
+        const submenu = this.querySelector('.context-menu-submenu') as HTMLElement
+        if (!submenu) return
+
+        // 使用 requestAnimationFrame 确保在下一帧计算，此时子菜单已经显示
+        requestAnimationFrame(() => {
+          const itemRect = this.getBoundingClientRect()
+          const submenuRect = submenu.getBoundingClientRect()
+          const viewportWidth = window.innerWidth
+
+          // 检查子菜单是否会超出右边界
+          const wouldOverflowRight = itemRect.right + submenuRect.width > viewportWidth - 10
+
+          console.log('[右键菜单] 子菜单定位:', {
+            itemRight: itemRect.right,
+            submenuWidth: submenuRect.width,
+            viewportWidth,
+            wouldOverflowRight,
+            direction: wouldOverflowRight ? '向左' : '向右'
+          })
+
+          if (wouldOverflowRight) {
+            // 向左展开
+            submenu.classList.add('expand-left')
+          } else {
+            // 向右展开（默认）
+            submenu.classList.remove('expand-left')
+          }
+        })
+      })
+    })
+
+    // 绑定点击事件（使用事件委托）
+    menu.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement
+      const menuItem = target.closest('.context-menu-item[data-id]') as HTMLElement
+
+      if (!menuItem) return
+      if (menuItem.classList.contains('disabled')) return
+      if (menuItem.classList.contains('has-children')) return // 有子菜单的不执行
+
+      const id = menuItem.getAttribute('data-id')
       if (!id) return
 
-      el.addEventListener('click', (e) => {
-        e.stopPropagation()
-        if (el.classList.contains('disabled')) return
-        if (el.classList.contains('has-children')) return // 有子菜单的不执行
-
-        const callback = callbacks.get(id)
-        if (callback) {
-          try {
-            callback()
-          } catch (err) {
-            console.error('右键菜单项执行失败:', err)
-          }
+      const callback = callbacks.get(id)
+      if (callback) {
+        try {
+          callback()
+        } catch (err) {
+          console.error('右键菜单项执行失败:', err)
         }
-        removeContextMenu()
-      })
+      }
+      removeContextMenu()
     })
 
     // 点击外部关闭
@@ -1068,7 +1109,8 @@ function initContextMenuListener() {
     // 监听编辑器的右键事件
     editor.addEventListener('contextmenu', (e) => {
       // 如果有插件注册了右键菜单项，显示自定义菜单
-      if (pluginContextMenuItems.length > 0) {
+      // 按住 Shift 键时显示原生菜单
+      if (pluginContextMenuItems.length > 0 && !e.shiftKey) {
         e.preventDefault()
         const ctx = buildContextMenuContext()
         showContextMenu(e.clientX, e.clientY, ctx)
@@ -1080,7 +1122,7 @@ function initContextMenuListener() {
     const preview = document.querySelector('.preview') as HTMLElement
     if (preview) {
       preview.addEventListener('contextmenu', (e) => {
-        if (pluginContextMenuItems.length > 0) {
+        if (pluginContextMenuItems.length > 0 && !e.shiftKey) {
           e.preventDefault()
           const ctx = buildContextMenuContext()
           showContextMenu(e.clientX, e.clientY, ctx)

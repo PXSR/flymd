@@ -1353,6 +1353,116 @@ export function activate(context) {
 }
 ```
 
+### 6. 作用域与隔离
+
+理解插件变量的作用域，避免命名冲突：
+
+#### 已隔离的部分
+
+**存储空间（完全隔离）**
+
+每个插件的 `context.storage` 是完全独立的，不会与其他插件冲突：
+
+```javascript
+// plugin-a
+export function activate(context) {
+  await context.storage.set('count', 1);  // ✅ 独立存储
+}
+
+// plugin-b
+export function activate(context) {
+  await context.storage.set('count', 2);  // ✅ 独立存储，不会覆盖 plugin-a
+}
+```
+
+**模块级变量（局部作用域）**
+
+模块内的变量默认是局部的，不会冲突：
+
+```javascript
+// plugin-a/main.js
+const privateData = { count: 1 };  // ✅ 局部变量
+
+export function activate(context) {
+  console.log(privateData.count);  // ✅ 可以访问
+}
+// 其他插件无法访问 privateData
+```
+
+#### 可能冲突的部分
+
+**全局对象 window（共享）**
+
+如果直接在 `window` 上挂载变量，可能与其他插件冲突：
+
+```javascript
+// ❌ 不推荐：污染全局命名空间
+export function activate(context) {
+  window.myData = { count: 1 };  // 可能与其他插件冲突
+}
+
+// ✅ 推荐：使用命名空间
+export function activate(context) {
+  window.__pluginData__ = window.__pluginData__ || {};
+  window.__pluginData__['my-plugin-id'] = { count: 1 };
+}
+
+// ✅ 最佳：优先使用模块作用域或 context.storage
+const myData = { count: 1 };  // 模块变量
+// 或
+await context.storage.set('myData', { count: 1 });  // 持久化存储
+```
+
+**DOM 元素 ID（共享）**
+
+避免使用简单的 ID 名称：
+
+```javascript
+// ❌ 不推荐：可能与其他插件冲突
+const panel = document.createElement('div');
+panel.id = 'panel';
+
+// ✅ 推荐：使用唯一 ID
+const panel = document.createElement('div');
+panel.id = 'my-plugin-panel-' + Math.random().toString(36).slice(2);
+```
+
+#### 最佳实践总结
+
+1. **优先使用 `context.storage`** - 持久化存储且自动隔离
+2. **使用模块作用域** - `const/let` 变量默认局部
+3. **避免污染全局** - 不要直接在 `window` 上挂载变量
+4. **使用唯一 ID** - DOM 元素 ID 添加插件前缀或随机字符串
+5. **通过 API 共享** - 使用 `context.registerAPI()` 安全地共享功能
+
+```javascript
+// ✅ 完整示例：良好的隔离实践
+const pluginState = {
+  count: 0,
+  data: []
+};
+
+export async function activate(context) {
+  // 从持久化存储加载
+  const savedCount = await context.storage.get('count') || 0;
+  pluginState.count = savedCount;
+
+  // 创建唯一 DOM 元素
+  const panel = document.createElement('div');
+  panel.id = `my-plugin-panel-${Date.now()}`;
+  panel.className = 'my-plugin-panel';
+
+  // 注册 API 供其他插件使用
+  context.registerAPI('my-plugin', {
+    getCount: () => pluginState.count,
+    increment: () => {
+      pluginState.count++;
+      context.storage.set('count', pluginState.count);
+    }
+  });
+}
+```
+
 ## 常见问题
 
 ### Q: 如何调试插件？

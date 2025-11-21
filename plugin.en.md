@@ -1352,6 +1352,116 @@ export function activate(context) {
 }
 ```
 
+### 6. Scope and Isolation
+
+Understand plugin variable scope to avoid naming conflicts:
+
+#### Isolated Parts
+
+**Storage Space (Fully Isolated)**
+
+Each plugin's `context.storage` is completely independent and won't conflict with other plugins:
+
+```javascript
+// plugin-a
+export function activate(context) {
+  await context.storage.set('count', 1);  // ✅ Independent storage
+}
+
+// plugin-b
+export function activate(context) {
+  await context.storage.set('count', 2);  // ✅ Independent storage, won't overwrite plugin-a
+}
+```
+
+**Module-level Variables (Local Scope)**
+
+Variables inside modules are local by default and won't conflict:
+
+```javascript
+// plugin-a/main.js
+const privateData = { count: 1 };  // ✅ Local variable
+
+export function activate(context) {
+  console.log(privateData.count);  // ✅ Can access
+}
+// Other plugins cannot access privateData
+```
+
+#### Potentially Conflicting Parts
+
+**Global Object window (Shared)**
+
+Directly mounting variables on `window` may conflict with other plugins:
+
+```javascript
+// ❌ Not recommended: Pollutes global namespace
+export function activate(context) {
+  window.myData = { count: 1 };  // May conflict with other plugins
+}
+
+// ✅ Recommended: Use namespace
+export function activate(context) {
+  window.__pluginData__ = window.__pluginData__ || {};
+  window.__pluginData__['my-plugin-id'] = { count: 1 };
+}
+
+// ✅ Best: Prefer module scope or context.storage
+const myData = { count: 1 };  // Module variable
+// or
+await context.storage.set('myData', { count: 1 });  // Persistent storage
+```
+
+**DOM Element IDs (Shared)**
+
+Avoid using simple ID names:
+
+```javascript
+// ❌ Not recommended: May conflict with other plugins
+const panel = document.createElement('div');
+panel.id = 'panel';
+
+// ✅ Recommended: Use unique IDs
+const panel = document.createElement('div');
+panel.id = 'my-plugin-panel-' + Math.random().toString(36).slice(2);
+```
+
+#### Best Practices Summary
+
+1. **Prefer `context.storage`** - Persistent storage with automatic isolation
+2. **Use module scope** - `const/let` variables are local by default
+3. **Avoid global pollution** - Don't mount variables directly on `window`
+4. **Use unique IDs** - Add plugin prefix or random string to DOM element IDs
+5. **Share via API** - Use `context.registerAPI()` to share functionality safely
+
+```javascript
+// ✅ Complete example: Good isolation practices
+const pluginState = {
+  count: 0,
+  data: []
+};
+
+export async function activate(context) {
+  // Load from persistent storage
+  const savedCount = await context.storage.get('count') || 0;
+  pluginState.count = savedCount;
+
+  // Create unique DOM element
+  const panel = document.createElement('div');
+  panel.id = `my-plugin-panel-${Date.now()}`;
+  panel.className = 'my-plugin-panel';
+
+  // Register API for other plugins
+  context.registerAPI('my-plugin', {
+    getCount: () => pluginState.count,
+    increment: () => {
+      pluginState.count++;
+      context.storage.set('count', pluginState.count);
+    }
+  });
+}
+```
+
 ## FAQ
 
 ### Q: How to debug plugins?

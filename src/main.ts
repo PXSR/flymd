@@ -694,6 +694,7 @@ let _lastPasteCombo: 'normal' | 'plain' | null = null
 
 // 配置存储（使用 tauri store）
 let store: Store | null = null
+let uploaderEnabledSnapshot = false
 // 插件管理（简单实现）
 type PluginManifest = { id: string; name?: string; version?: string; author?: string; description?: string; main?: string; minHostVersion?: string }
 type InstalledPlugin = { id: string; name?: string; version?: string; enabled?: boolean; showInMenuBar?: boolean; dir: string; main: string; builtin?: boolean; description?: string; manifestUrl?: string }
@@ -709,7 +710,7 @@ type ContextMenuItemConfig = {
   label: string
   icon?: string
   condition?: (ctx: ContextMenuContext) => boolean
-  onClick?: (ctx: ContextMenuContext) => void
+  onClick?: (ctx: ContextMenuContext) => void | Promise<void>
   children?: ContextMenuItemConfig[]
   divider?: boolean
   disabled?: boolean
@@ -743,6 +744,58 @@ let _pluginsMenuBtn: HTMLDivElement | null = null // "插件"菜单按钮
 const pluginContextMenuItems: PluginContextMenuItem[] = [] // 所有插件注册的右键菜单项
 let _contextMenuEl: HTMLDivElement | null = null // 当前显示的右键菜单元素
 let _contextMenuKeyHandler: ((e: KeyboardEvent) => void) | null = null
+
+async function readUploaderEnabledState(): Promise<boolean> {
+  try {
+    if (!store) return uploaderEnabledSnapshot
+    const up = await store.get('uploader')
+    if (up && typeof up === 'object') {
+      uploaderEnabledSnapshot = !!(up as any).enabled
+    }
+    return uploaderEnabledSnapshot
+  } catch {
+    return uploaderEnabledSnapshot
+  }
+}
+
+async function toggleUploaderEnabledFromMenu(): Promise<boolean> {
+  try {
+    if (!store) {
+      pluginNotice('设置尚未初始化，暂无法切换图床开关', 'err', 2200)
+      return uploaderEnabledSnapshot
+    }
+    const raw = ((await store.get('uploader')) as any) || {}
+    const current = !!raw.enabled
+    if (!current) {
+      if (!raw.accessKeyId || !raw.secretAccessKey || !raw.bucket) {
+        pluginNotice('请先在“图床设置”中填写 AccessKey / Secret / Bucket', 'err', 2600)
+        return current
+      }
+    }
+    raw.enabled = !current
+    await store.set('uploader', raw)
+    await store.save()
+    uploaderEnabledSnapshot = !!raw.enabled
+    pluginNotice(uploaderEnabledSnapshot ? '图床上传已开启' : '图床上传已关闭', 'ok', 1600)
+    return uploaderEnabledSnapshot
+  } catch (err) {
+    console.error('toggle uploader failed', err)
+    pluginNotice('切换图床开关失败', 'err', 2000)
+    return uploaderEnabledSnapshot
+  }
+}
+
+async function buildBuiltinContextMenuItems(): Promise<ContextMenuItemConfig[]> {
+  const items: ContextMenuItemConfig[] = []
+  const enabled = await readUploaderEnabledState()
+  items.push({
+    label: t('menu.uploader') || '图床上传',
+    note: enabled ? '已开启' : '未开启',
+    icon: '🖼️',
+    onClick: async () => { await toggleUploaderEnabledFromMenu() }
+  })
+  return items
+}
 
 // 插件下拉菜单管理
 const PLUGIN_DROPDOWN_OVERLAY_ID = 'plugin-dropdown-overlay'
@@ -870,7 +923,7 @@ function showPluginDropdown(anchor: HTMLElement, items: any[]) {
     const overlay = document.createElement('div')
     overlay.id = PLUGIN_DROPDOWN_OVERLAY_ID
 
-    const callbacks = new Map<string, () => void>()
+    const callbacks = new Map<string, () => void | Promise<void>>()
     const menuHtml = renderPluginMenuItems(items, callbacks)
 
     overlay.innerHTML = `<div id="${PLUGIN_DROPDOWN_PANEL_ID}">${menuHtml}</div>`
@@ -1141,7 +1194,7 @@ function renderContextMenuItem(item: ContextMenuItemConfig, ctx: ContextMenuCont
 }
 
 // 显示右键菜单
-function showContextMenu(x: number, y: number, ctx: ContextMenuContext) {
+async function showContextMenu(x: number, y: number, ctx: ContextMenuContext) {
   try {
     removeContextMenu()
 
@@ -1150,6 +1203,14 @@ function showContextMenu(x: number, y: number, ctx: ContextMenuContext) {
     for (const item of pluginContextMenuItems) {
       if (!item || !item.config) continue
       validItems.push(item.config)
+    }
+
+    const builtinItems = await buildBuiltinContextMenuItems()
+    if (builtinItems.length > 0) {
+      if (validItems.length > 0) {
+        validItems.push({ label: '', divider: true })
+      }
+      validItems.push(...builtinItems)
     }
 
     if (validItems.length === 0) return
@@ -1231,7 +1292,12 @@ function showContextMenu(x: number, y: number, ctx: ContextMenuContext) {
       const callback = callbacks.get(id)
       if (callback) {
         try {
-          callback()
+          const result = callback()
+          if (result && typeof (result as any).then === 'function') {
+            ;(result as Promise<any>).catch((err) => {
+              console.error('右键菜单项执行失败:', err)
+            })
+          }
         } catch (err) {
           console.error('右键菜单项执行失败:', err)
         }
@@ -1270,7 +1336,7 @@ function initContextMenuListener() {
       if (pluginContextMenuItems.length > 0 && !e.shiftKey) {
         e.preventDefault()
         const ctx = buildContextMenuContext()
-        showContextMenu(e.clientX, e.clientY, ctx)
+        void showContextMenu(e.clientX, e.clientY, ctx)
       }
       // 否则使用浏览器默认右键菜单
     })
@@ -1282,7 +1348,7 @@ function initContextMenuListener() {
         if (pluginContextMenuItems.length > 0 && !e.shiftKey) {
           e.preventDefault()
           const ctx = buildContextMenuContext()
-          showContextMenu(e.clientX, e.clientY, ctx)
+          void showContextMenu(e.clientX, e.clientY, ctx)
         }
       })
     }
@@ -1295,7 +1361,7 @@ function initContextMenuListener() {
       if (!root || !root.contains(e.target as Node)) return
       e.preventDefault()
       const ctx = buildContextMenuContext()
-      showContextMenu(e.clientX, e.clientY, ctx)
+      void showContextMenu(e.clientX, e.clientY, ctx)
     }, true)
   } catch (err) {
     console.error('初始化右键菜单监听失败:', err)
@@ -5491,7 +5557,7 @@ async function openUploaderDialog() {
             return
           }
         }
-        if (store) { await store.set('uploader', cfg); await store.save() }
+        if (store) { await store.set('uploader', cfg); await store.save(); uploaderEnabledSnapshot = !!cfg.enabled }
       } catch (e) { console.warn('即时应用图床开关失败', e) }
     }
     inputEnabled.addEventListener('change', () => { void applyImmediate() })
@@ -5533,6 +5599,7 @@ async function openUploaderDialog() {
       if (store) {
         await store.set('uploader', cfg)
         await store.save()
+        uploaderEnabledSnapshot = !!cfg.enabled
       }
       showUploaderOverlay(false)
     } catch (err) {

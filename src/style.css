@@ -3982,7 +3982,16 @@ body.focus-mode .focus-trigger-zone {
   pointer-events: auto;
 }
 
-/* 专注模式下库侧栏：纯文字，无图标，无悬浮效果 */
+/* 专注模式下库侧栏：纯文字，无图标，无悬浮效果，背景跟随编辑区 */
+body.focus-mode .library {
+  border-right: none !important;
+  box-shadow: none !important;
+}
+
+body.focus-mode .library .lib-header {
+  border-bottom: none !important;
+}
+
 body.focus-mode .library .lib-ico,
 body.focus-mode .library .lib-ico-folder,
 body.focus-mode .library .lib-ico-file,
@@ -4025,6 +4034,29 @@ body.focus-mode .library .lib-outline .ol-item:hover {
 
 body.focus-mode .library .lib-outline .ol-tg {
   display: none !important;
+}
+
+/* 库按钮纯文字样式 */
+body.focus-mode .library .lib-choose-btn,
+body.focus-mode .library .lib-action-btn {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 4px 8px !important;
+  font-weight: 400 !important;
+  color: var(--muted) !important;
+}
+
+body.focus-mode .library .lib-choose-btn:hover,
+body.focus-mode .library .lib-action-btn:hover {
+  background: transparent !important;
+  color: var(--fg) !important;
+}
+
+body.focus-mode .library .lib-action-btn.active {
+  background: transparent !important;
+  color: var(--fg) !important;
+  font-weight: 500 !important;
 }
 
 /* ============ 专注模式样式结束 ============ */

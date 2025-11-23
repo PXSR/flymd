@@ -2051,6 +2051,8 @@ async function setWysiwygEnabled(enable: boolean) {
       const b = document.getElementById('btn-wysiwyg') as HTMLDivElement | null
       if (b) b.title = (wysiwyg ? '\u9000\u51fa' : '\u5f00\u542f') + '\u6240\u89c1\u6a21\u5f0f (Ctrl+W)\n' + (wysiwygEnterToRenderOnly ? '\u5f53\u524d: \u56de\u8f66\u518d\u6e32\u67d3 (Ctrl+Shift+R \u5207\u6362)' : '\u5f53\u524d: \u5373\u65f6\u6e32\u67d3 (Ctrl+Shift+R \u5207\u6362)')
     } catch {}
+    // 触发模式变更事件（专注模式侧栏背景跟随）
+    try { window.dispatchEvent(new CustomEvent('flymd:mode:changed', { detail: { wysiwyg } })) } catch {}
   } catch {}
 }
 
@@ -4247,6 +4249,8 @@ async function toggleMode() {
       if (mode !== 'edit') bindOutlineScrollSync()
     }
   } catch {}
+  // 触发模式变更事件（专注模式侧栏背景跟随）
+  try { window.dispatchEvent(new CustomEvent('flymd:mode:changed', { detail: { mode } })) } catch {}
 }
 
 // 打开文件
@@ -5555,6 +5559,8 @@ async function toggleFocusMode(enabled?: boolean) {
     const titlebar = document.querySelector('.titlebar') as HTMLElement | null
     if (titlebar) titlebar.classList.remove('show')
   }
+  // 更新侧栏背景色
+  try { updateFocusSidebarBg() } catch {}
 }
 
 async function getFocusMode(): Promise<boolean> {
@@ -5622,8 +5628,36 @@ function initFocusModeEvents() {
     if (!focusMode) {
       titlebar.classList.remove('show')
     }
+    // 更新侧栏背景色
+    updateFocusSidebarBg()
   })
 }
+
+// 更新专注模式下侧栏背景色：固定使用白色
+function updateFocusSidebarBg() {
+  const library = document.querySelector('.library') as HTMLElement | null
+  if (!library) return
+
+  // 如果不是专注模式，移除自定义背景色，使用默认
+  if (!focusMode) {
+    library.style.removeProperty('background')
+    const header = library.querySelector('.lib-header') as HTMLElement | null
+    if (header) header.style.removeProperty('background')
+    return
+  }
+
+  // 专注模式下使用白色背景
+  const bgColor = '#ffffff'
+  library.style.background = bgColor
+  const header = library.querySelector('.lib-header') as HTMLElement | null
+  if (header) header.style.background = bgColor
+}
+
+// 监听模式切换事件，更新专注模式侧栏背景
+window.addEventListener('flymd:mode:changed', () => updateFocusSidebarBg())
+// 监听主题变更事件，更新专注模式侧栏背景
+window.addEventListener('flymd:theme:changed', () => updateFocusSidebarBg())
+
 // ========== 专注模式结束 ==========
 
 async function pickLibraryRoot(): Promise<string | null> {

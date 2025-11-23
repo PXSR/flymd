@@ -104,6 +104,14 @@ export function applyThemePrefs(prefs: ThemePrefs): void {
       const ev = new CustomEvent('flymd:theme:changed', { detail: { prefs } })
       window.dispatchEvent(ev)
     } catch {}
+
+    // 专注模式下更新侧栏背景色
+    setTimeout(() => {
+      const updateFunc = (window as any).updateFocusSidebarBg
+      if (typeof updateFunc === 'function') {
+        updateFunc()
+      }
+    }, 50)
   } catch {}
 }
 

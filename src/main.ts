@@ -5750,7 +5750,7 @@ function initFocusModeEvents() {
   })
 }
 
-// 更新专注模式下侧栏背景色：固定使用白色
+// 更新专注模式下侧栏背景色：跟随编辑区背景色
 function updateFocusSidebarBg() {
   const library = document.querySelector('.library') as HTMLElement | null
   if (!library) return
@@ -5763,8 +5763,33 @@ function updateFocusSidebarBg() {
     return
   }
 
-  // 专注模式下使用白色背景
-  const bgColor = '#ffffff'
+  // 专注模式下，获取编辑区的实际背景色
+  let bgColor = '#ffffff' // 默认白色
+
+  // 尝试从编辑器容器获取背景色
+  const editor = document.querySelector('.editor') as HTMLElement | null
+  if (editor) {
+    const computedStyle = window.getComputedStyle(editor)
+    const editorBg = computedStyle.backgroundColor
+    // 如果获取到有效的背景色（不是透明），使用它
+    if (editorBg && editorBg !== 'transparent' && editorBg !== 'rgba(0, 0, 0, 0)') {
+      bgColor = editorBg
+    }
+  }
+
+  // 如果编辑器背景色无效，尝试从容器获取
+  if (bgColor === '#ffffff') {
+    const container = document.querySelector('.container') as HTMLElement | null
+    if (container) {
+      const computedStyle = window.getComputedStyle(container)
+      const containerBg = computedStyle.backgroundColor
+      if (containerBg && containerBg !== 'transparent' && containerBg !== 'rgba(0, 0, 0, 0)') {
+        bgColor = containerBg
+      }
+    }
+  }
+
+  // 应用背景色到库侧栏
   library.style.background = bgColor
   const header = library.querySelector('.lib-header') as HTMLElement | null
   if (header) header.style.background = bgColor
@@ -5774,6 +5799,9 @@ function updateFocusSidebarBg() {
 window.addEventListener('flymd:mode:changed', () => updateFocusSidebarBg())
 // 监听主题变更事件，更新专注模式侧栏背景
 window.addEventListener('flymd:theme:changed', () => updateFocusSidebarBg())
+
+// 暴露 updateFocusSidebarBg 到全局，供其他模块调用
+;(window as any).updateFocusSidebarBg = updateFocusSidebarBg
 
 // ========== 专注模式结束 ==========
 
@@ -7516,7 +7544,13 @@ function bindEvents() {
     } catch {}
     // 编辑快捷键（全局）：插入链接 / 加粗 / 斜体
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); guard(insertLink)(); return }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'w') { e.preventDefault(); await toggleWysiwyg(); return }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      await toggleWysiwyg();
+      // 更新专注模式侧栏背景色
+      setTimeout(() => updateFocusSidebarBg(), 100);
+      return
+    }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); wysiwygEnterToRenderOnly = !wysiwygEnterToRenderOnly; try { const b = document.getElementById('btn-wysiwyg') as HTMLDivElement | null; if (b) b.title = (wysiwyg ? '\u6240\u89c1\u6a21\u5f0f' : '') + (wysiwygEnterToRenderOnly ? ' - \u56de\u8f66\u518d\u6e32\u67d3' : ' - \u5373\u65f6\u6e32\u67d3') + ' (Ctrl+W)'; } catch {}; return }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'r') {
       e.preventDefault();
@@ -7524,12 +7558,14 @@ function bindEvents() {
       try { (e as any).stopImmediatePropagation && (e as any).stopImmediatePropagation() } catch {}
       try {
         if (wysiwyg) {
-          // 先确定进入“阅读”(预览)状态，再退出所见，避免退出所见时根据旧 mode 隐藏预览
+          // 先确定进入"阅读"(预览)状态，再退出所见，避免退出所见时根据旧 mode 隐藏预览
           mode = 'preview'
           try { preview.classList.remove('hidden') } catch {}
           try { await renderPreview() } catch {}
           try { await setWysiwygEnabled(false) } catch {}
           try { syncToggleButton() } catch {}
+          // 更新专注模式侧栏背景色
+          setTimeout(() => updateFocusSidebarBg(), 100);
           return
         }
       } catch {}
@@ -7538,6 +7574,8 @@ function bindEvents() {
         try { preview.classList.remove('hidden') } catch {}
         try { await renderPreview() } catch {}
         try { syncToggleButton() } catch {}
+        // 更新专注模式侧栏背景色
+        setTimeout(() => updateFocusSidebarBg(), 100);
       }
       return
     }
@@ -7545,8 +7583,15 @@ function bindEvents() {
       e.preventDefault();
       try { e.stopPropagation() } catch {}
       try { (e as any).stopImmediatePropagation && (e as any).stopImmediatePropagation() } catch {}
-      if (wysiwyg) { try { await setWysiwygEnabled(false) } catch {}; return }
+      if (wysiwyg) {
+        try { await setWysiwygEnabled(false) } catch {};
+        // 更新专注模式侧栏背景色
+        setTimeout(() => updateFocusSidebarBg(), 100);
+        return
+      }
       await toggleMode();
+      // 更新专注模式侧栏背景色
+      setTimeout(() => updateFocusSidebarBg(), 100);
       return
     }
     if (e.ctrlKey && e.key.toLowerCase() === 'b') { e.preventDefault(); guard(formatBold)(); if (mode === 'preview') void renderPreview(); else if (wysiwyg) scheduleWysiwygRender(); return }

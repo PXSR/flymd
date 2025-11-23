@@ -25,7 +25,7 @@ import { t, fmtStatus, getLocalePref, setLocalePref, getLocale } from './i18n'
 // markdown-it 和 DOMPurify 改为按需动态 import，类型仅在编译期引用
 import type MarkdownIt from 'markdown-it'
 // WYSIWYG: 锚点插件与锚点同步（用于替换纯比例同步）
-import { enableWysiwygV2, disableWysiwygV2, wysiwygV2ToggleBold, wysiwygV2ToggleItalic, wysiwygV2ApplyLink, wysiwygV2GetSelectedText, wysiwygV2FindNext, wysiwygV2FindPrev, wysiwygV2ReplaceOne as wysiwygV2ReplaceOneSel, wysiwygV2ReplaceAllInDoc } from './wysiwyg/v2/index'
+import { enableWysiwygV2, disableWysiwygV2, wysiwygV2ToggleBold, wysiwygV2ToggleItalic, wysiwygV2ApplyLink, wysiwygV2GetSelectedText, wysiwygV2FindNext, wysiwygV2FindPrev, wysiwygV2ReplaceOne as wysiwygV2ReplaceOneSel, wysiwygV2ReplaceAllInDoc, wysiwygV2ReplaceAll } from './wysiwyg/v2/index'
 
 // Tauri 插件（v2）
 // Tauri 对话框：使用 ask 提供原生确认，避免浏览器 confirm 在关闭事件中失效
@@ -1051,7 +1051,13 @@ function buildContextMenuContext(): ContextMenuContext {
   try {
     const sel = editor.selectionStart || 0
     const end = editor.selectionEnd || 0
-    const text = editor.value.slice(Math.min(sel, end), Math.max(sel, end))
+    let text = editor.value.slice(Math.min(sel, end), Math.max(sel, end))
+    if (wysiwygV2Active) {
+      try {
+        const wysSel = String(wysiwygV2GetSelectedText() || '')
+        text = wysSel
+      } catch {}
+    }
     return {
       selectedText: text,
       cursorPosition: sel,
@@ -1279,6 +1285,17 @@ function initContextMenuListener() {
         }
       })
     }
+
+    document.addEventListener('contextmenu', (e) => {
+      if (!wysiwygV2Active) return
+      if (pluginContextMenuItems.length === 0) return
+      if (e.shiftKey) return
+      const root = document.getElementById('md-wysiwyg-root') as HTMLElement | null
+      if (!root || !root.contains(e.target as Node)) return
+      e.preventDefault()
+      const ctx = buildContextMenuContext()
+      showContextMenu(e.clientX, e.clientY, ctx)
+    }, true)
   } catch (err) {
     console.error('初始化右键菜单监听失败:', err)
   }
@@ -1683,8 +1700,15 @@ function syncScrollEditorToPreview() { /* overlay removed */ }
 
 function scheduleWysiwygRender() {
   try {
-    // 旧所见模式已移除：不再进行 overlay 渲染调度
-    return
+    if (!wysiwyg || !wysiwygV2Active) return
+    if (_wysiwygRaf) cancelAnimationFrame(_wysiwygRaf)
+    _wysiwygRaf = requestAnimationFrame(() => {
+      _wysiwygRaf = 0
+      try {
+        const value = String((editor as HTMLTextAreaElement).value || '')
+        void wysiwygV2ReplaceAll(value)
+      } catch {}
+    })
   } catch {}
 }
 

@@ -85,17 +85,21 @@ As a manager, you record this week's meeting schedule in your notes
 
 ### 🆓 Built-in Free AI Service
 
-includes a built-in free AI service—ready to use out of the box, no API key required. The free service is powered by SiliconFlow.
+> 💡 **Available since v0.4.0**
 
-<a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/plugins/ai-assistant/Powered-by-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="public/plugins/ai-assistant/Powered-by-light.png">
-    <img alt="Powered by SiliconFlow" src="public/plugins/ai-assistant/Powered-by-light.png" width="200">
-  </picture>
-</a>
+Built-in free AI service—**ready to use out of the box**, no API key required. The free service is powered by SiliconFlow.
 
-> We recommend [registering a SiliconFlow account](https://cloud.siliconflow.cn/i/X96CT74a) for access to top-tier models.
+<div align="center">
+  <a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="public/plugins/ai-assistant/Powered-by-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="public/plugins/ai-assistant/Powered-by-light.png">
+      <img alt="Powered by SiliconFlow" src="public/plugins/ai-assistant/Powered-by-light.png" width="240">
+    </picture>
+  </a>
+</div>
+
+> 💡 **Advanced Usage**: We recommend [registering a SiliconFlow account](https://cloud.siliconflow.cn/i/X96CT74a) to unlock more powerful top-tier models and higher rate limits.
 
 ## 🚀 Getting Started
 

@@ -1286,9 +1286,12 @@ export async function openSettings(context){
     ' <div id="ai-set-actions"><button id="ai-set-cancel">取消</button><button class="primary" id="ai-set-ok">保存</button></div>',
     '</div>'
   ].join('')
-  const host = document.getElementById('ai-assist-win') || document.body
+  // 检查 AI 窗口是否存在且可见
+  const aiWin = document.getElementById('ai-assist-win')
+  const isWinVisible = aiWin && window.getComputedStyle(aiWin).display !== 'none'
+  const host = isWinVisible ? aiWin : document.body
   host.appendChild(overlay)
-  // 若没有插件窗口，挂到 body：用固定定位覆盖全局
+  // 若挂到 body：用固定定位覆盖全局
   if (host === document.body) {
     try { overlay.style.position = 'fixed'; overlay.style.inset = '0'; overlay.style.zIndex = '2147483000' } catch {}
   }
@@ -1408,6 +1411,14 @@ export async function activate(context) {
         icon: '🤖',
         children: [
           {
+            label: '打开 AI 助手',
+            icon: '💬',
+            onClick: async () => {
+              await toggleWindow(context)
+            }
+          },
+          { type: 'divider' },
+          {
             type: 'group',
             label: '快捷操作'
           },
@@ -1477,13 +1488,6 @@ export async function activate(context) {
             }
           },
           { type: 'divider' },
-          {
-            label: '打开 AI 助手',
-            icon: '💬',
-            onClick: async () => {
-              await toggleWindow(context)
-            }
-          },
           {
             label: 'Powered by SiliconFlow',
             icon: '⚡',

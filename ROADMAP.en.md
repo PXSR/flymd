@@ -2,10 +2,18 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
-## Coming Soon
-- WYSIWYG reaches feature parity with extensions so AI Assistant, todo plugins, and other add-ons can read/write inside WYSIWYG without switching back to source mode.
-- The custom context menu bundles built-in actions: toggle the uploader, run a WebDAV sync immediately, and open sync records—plus it keeps the `Shift + Right Click` hint for the native menu.
-- WebDAV sync logs now use local timestamps and automatically truncate when they exceed 5 MB to avoid unbounded growth.
+## Update v0.4.0
+- Added: AI Assistant now defaults to free model mode with deep SiliconFlow integration — built-in free AI service works out of the box, no API key configuration needed
+- Added: Free model mode displays "Powered by SiliconFlow" entry in context menu, one-click jump to register for premium model experience
+- Added: Context menu now includes WebDAV sync, sync log viewer, and image hosting toggle shortcuts for more convenient operations
+- Added: Custom context menu shows "Hold Shift + Right Click to open native menu" hint to prevent confusion when native menu is overridden
+- Added: WYSIWYG mode now fully supports AI extension capabilities — AI Assistant can instantly read/write content in WYSIWYG mode without switching back to source mode
+- Improved: AI dialog window now includes boundary checks to ensure at least 100px remains visible when dragging, preventing window loss
+- Improved: Optimized extension settings window display logic, fixed issue where settings dialog wouldn't appear after AI window was closed
+- Improved: WebDAV sync logs now use local timestamps for better readability; logs auto-truncate when exceeding 5MB to prevent unbounded growth
+- Fixed: WebDAV sync notification bubble being obscured by UI in Focus Mode, ensuring sync prompts display properly
+- Fixed: Focus Mode sidebar expand button not displaying on first open
+- Fixed: "Default to WYSIWYG Mode" setting not taking effect after application restart
 
 ## Update v0.3.9
 - Added: Focus Mode — borderless immersive writing experience. Press `Ctrl+Shift+F` to enter, hiding the title bar, menu bar, and all UI elements, leaving only a clean editing area.

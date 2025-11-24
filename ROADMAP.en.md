@@ -9,6 +9,7 @@
 - Added: Free model mode displays "Powered by SiliconFlow" entry in context menu, one-click jump to register for premium model experience
 - Added: Context menu now includes WebDAV sync, sync log viewer, and image hosting toggle shortcuts for more convenient operations
 - Added: Custom context menu shows "Hold Shift + Right Click to open native menu" hint to prevent confusion when native menu is overridden
+- Added: xxtui todo push plugin 0.1.5-beta introduces a unified missing-API-key dialog and embeds QR/link instructions in settings so users can quickly obtain keys
 - Added: WYSIWYG mode now fully supports AI extension capabilities — AI Assistant can instantly read/write content in WYSIWYG mode without switching back to source mode
 - Improved: Theme settings toggle layout optimized to three columns — Focus Mode, WYSIWYG Mode, Dark Mode at a glance
 - Improved: AI dialog window now includes boundary checks to ensure at least 100px remains visible when dragging, preventing window loss

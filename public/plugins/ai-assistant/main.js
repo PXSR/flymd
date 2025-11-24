@@ -24,7 +24,8 @@ const DEFAULT_CFG = {
   dock: 'left', // 'left'=左侧停靠；'right'=右侧停靠；false=浮动窗口
   limits: { maxCtxChars: 6000 },
   theme: 'auto',
-  freeModel: DEFAULT_FREE_MODEL_KEY
+  freeModel: DEFAULT_FREE_MODEL_KEY,
+  alwaysUseFreeTrans: false // 翻译功能始终使用免费模型
 }
 
 // 会话只做最小持久化（可选），首版以内存为主
@@ -1041,7 +1042,9 @@ async function quick(context, kind){
 async function translateText(context) {
   try {
     const cfg = await loadCfg(context)
-    const isFree = isFreeProvider(cfg)
+    // 如果开启了"翻译始终使用免费模型"，则强制使用免费模式
+    const useFreeTrans = !!cfg.alwaysUseFreeTrans
+    const isFree = useFreeTrans || isFreeProvider(cfg)
     if (!cfg.apiKey && !isFree) {
       context.ui.notice('请先在"设置"中配置 API Key', 'err', 3000)
       return
@@ -1076,10 +1079,12 @@ async function translateText(context) {
     const system = '你是专业的翻译助手。'
     const prompt = buildPromptPrefix('翻译') + '\n\n' + textToTranslate
 
-    const url = buildApiUrl(cfg)
-    const headers = buildApiHeaders(cfg)
+    // 构造临时配置对象用于翻译调用
+    const transCfg = useFreeTrans ? { ...cfg, provider: 'free' } : cfg
+    const url = buildApiUrl(transCfg)
+    const headers = buildApiHeaders(transCfg)
     const body = JSON.stringify({
-      model: resolveModelId(cfg),
+      model: resolveModelId(transCfg),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: prompt }
@@ -1550,6 +1555,7 @@ export async function openSettings(context){
     ' <div id="ai-set-head"><div id="ai-set-title">AI 设置</div><button id="ai-set-close" title="关闭">×</button></div>',
     ' <div id="ai-set-body">',
     '  <div class="set-row mode-row"><label>模式</label><span class="mode-label" id="mode-label-custom">自定义</span><label class="toggle-switch"><input type="checkbox" id="set-provider-toggle"/><span class="toggle-slider"></span></label><span class="mode-label" id="mode-label-free">免费模型</span></div>',
+    '  <div class="set-row mode-row"><label>翻译免费</label><span style="font-size:12px;color:#6b7280;">翻译功能始终使用免费模型</span><label class="toggle-switch"><input type="checkbox" id="set-trans-free-toggle"/><span class="toggle-slider"></span></label></div>',
     '  <div class="free-warning" id="free-warning">免费模型由硅基流动提供，<a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">推荐注册硅基流动账号获得顶级模型体验</a></div>',
     '  <div class="set-row custom-only"><label>Base URL</label><select id="set-base-select"><option value="https://api.openai.com/v1">OpenAI</option><option value="https://api.siliconflow.cn/v1">硅基流动</option><option value="https://apic1.ohmycdn.com/api/v1/ai/openai/cc-omg/v1">OMG资源包</option><option value="custom">自定义</option></select><input id="set-base" type="text" placeholder="https://api.openai.com/v1"/></div>',
     '  <div class="set-row custom-only"><label>API Key</label><input id="set-key" type="password" placeholder="sk-..."/></div>',
@@ -1574,6 +1580,7 @@ export async function openSettings(context){
   }
   // 赋初值
   const elProviderToggle = overlay.querySelector('#set-provider-toggle')
+  const elTransFreeToggle = overlay.querySelector('#set-trans-free-toggle')
   const elBase = overlay.querySelector('#set-base')
   const elBaseSel = overlay.querySelector('#set-base-select')
   const elKey = overlay.querySelector('#set-key')
@@ -1586,6 +1593,7 @@ export async function openSettings(context){
   const elModeLabelFree = overlay.querySelector('#mode-label-free')
   const FREE_PROXY_URL = 'https://flymd.llingfei.com/ai/ai_proxy.php'
   if (elProviderToggle) elProviderToggle.checked = cfg.provider === 'free'
+  if (elTransFreeToggle) elTransFreeToggle.checked = !!cfg.alwaysUseFreeTrans
   // 始终显示用户保存的自定义配置值（不因免费模式而清空）
   elBase.value = cfg.baseUrl || 'https://api.openai.com/v1'
   elKey.value = cfg.apiKey || ''
@@ -1645,13 +1653,14 @@ export async function openSettings(context){
   WIN().addEventListener('keydown', function onEsc(e){ if (e.key === 'Escape') { close(); WIN().removeEventListener('keydown', onEsc) } })
   overlay.querySelector('#ai-set-ok')?.addEventListener('click', async () => {
     const provider = elProviderToggle && elProviderToggle.checked ? 'free' : 'openai'
+    const alwaysUseFreeTrans = elTransFreeToggle && elTransFreeToggle.checked
     // 始终保存用户输入的自定义配置值，不因免费模式而清空
     const baseUrl = String(elBase.value || '').trim() || 'https://api.openai.com/v1'
     const apiKey = String(elKey.value || '').trim()
     const model = String(elModel.value || '').trim() || 'gpt-4o-mini'
     const n = Math.max(1000, parseInt(String(elMax.value || '6000'),10) || 6000)
     const sidew = Math.max(MIN_WIDTH, parseInt(String(elSideW.value || MIN_WIDTH),10) || MIN_WIDTH)
-    const next = { ...cfg, provider, baseUrl, apiKey, model, limits: { maxCtxChars: n }, win: { ...(cfg.win||{}), w: sidew, x: cfg.win?.x||60, y: cfg.win?.y||60, h: cfg.win?.h||440 } }
+    const next = { ...cfg, provider, alwaysUseFreeTrans, baseUrl, apiKey, model, limits: { maxCtxChars: n }, win: { ...(cfg.win||{}), w: sidew, x: cfg.win?.x||60, y: cfg.win?.y||60, h: cfg.win?.h||440 } }
     await saveCfg(context, next)
     const m = el('ai-model'); if (m) m.value = model
     context.ui.notice('设置已保存', 'ok', 1600)

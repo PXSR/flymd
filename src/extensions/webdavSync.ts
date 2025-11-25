@@ -280,6 +280,7 @@ export type WebdavSyncConfig = {
   confirmDeleteRemote?: boolean  // 删除远程文件时是否需要确认（默认true）
   localDeleteStrategy?: 'ask' | 'auto' | 'keep'  // 本地文件删除策略：询问用户/自动删除/保留本地（默认auto）
   allowHttpInsecure?: boolean  // 是否允许 HTTP 明文 WebDAV
+  allowedHttpHosts?: string[]  // 允许的 HTTP 主机白名单
 }
 
 let _store: Store | null = null
@@ -287,6 +288,16 @@ async function getStore(): Promise<Store> {
   if (_store) return _store
   _store = await Store.load('flymd-settings.json')
   return _store
+}
+
+function sanitizeHttpHosts(list: any): string[] {
+  if (!Array.isArray(list)) return []
+  const out: string[] = []
+  for (const item of list) {
+    const v = typeof item === 'string' ? item.trim() : ''
+    if (v) out.push(v)
+  }
+  return out
 }
 
 export async function getWebdavSyncConfig(): Promise<WebdavSyncConfig> {
@@ -309,6 +320,7 @@ export async function getWebdavSyncConfig(): Promise<WebdavSyncConfig> {
     confirmDeleteRemote: raw?.confirmDeleteRemote !== false,  // 默认true（需要确认）
     localDeleteStrategy: raw?.localDeleteStrategy || 'auto',  // 默认auto（自动删除）
     allowHttpInsecure: raw?.allowHttpInsecure === true,
+    allowedHttpHosts: sanitizeHttpHosts(raw?.allowedHttpHosts),
   }
   return cfg
 }
@@ -317,6 +329,9 @@ export async function setWebdavSyncConfig(next: Partial<WebdavSyncConfig>): Prom
   const store = await getStore()
   const cur = (await store.get('sync')) as any || {}
   const merged = { ...cur, ...next }
+  if (Array.isArray(merged.allowedHttpHosts)) {
+    merged.allowedHttpHosts = merged.allowedHttpHosts.map((v: any) => typeof v === 'string' ? v.trim() : '').filter((v: string) => !!v)
+  }
   await store.set('sync', merged)
   await store.save()
 }
@@ -353,6 +368,46 @@ function toEpochMs(v: any): number {
   if (typeof v === 'string') { const t = Date.parse(v); if (Number.isFinite(t)) return t }
   try { if (v instanceof Date) return v.getTime() } catch {}
   const n = Number(v); return Number.isFinite(n) ? n : 0
+}
+
+type HostPort = { host: string; port: string }
+
+function parseHostPort(input: string): HostPort | null {
+  if (!input) return null
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const tryParse = (value: string) => {
+    try { return new URL(value) } catch { return null }
+  }
+  let urlObj = tryParse(trimmed)
+  if (!urlObj && !/^https?:\/\//i.test(trimmed)) {
+    urlObj = tryParse('http://' + trimmed)
+  }
+  if (!urlObj) return null
+  const host = urlObj.hostname?.toLowerCase() || ''
+  if (!host) return null
+  const port = urlObj.port || ''
+  return { host, port }
+}
+
+function normalizeHttpWhitelist(list?: string[]): HostPort[] {
+  if (!Array.isArray(list)) return []
+  const out: HostPort[] = []
+  for (const raw of list) {
+    const parsed = typeof raw === 'string' ? parseHostPort(raw) : null
+    if (parsed) out.push(parsed)
+  }
+  return out
+}
+
+function isHostAllowedByWhitelist(target: HostPort | null, whitelist: HostPort[]): boolean {
+  if (!target) return false
+  if (whitelist.length === 0) return true
+  return whitelist.some(entry => {
+    if (entry.host !== target.host) return false
+    if (!entry.port) return true
+    return entry.port === (target.port || '')
+  })
 }
 
 type FileEntry = { path: string; mtime: number; size: number; hash?: string; isDir?: boolean; etag?: string }
@@ -719,6 +774,7 @@ export async function syncNow(reason: SyncReason): Promise<{ uploaded: number; d
     console.log('[WebDAV Sync] 开始同步, reason:', reason)
 
     const cfg = await getWebdavSyncConfig()
+    const httpWhitelist = normalizeHttpWhitelist(cfg.allowedHttpHosts)
     if (!cfg.enabled) {
       await syncLog('[skip] 同步未启用')
       console.log('[WebDAV Sync] 同步未启用')
@@ -747,6 +803,17 @@ export async function syncNow(reason: SyncReason): Promise<{ uploaded: number; d
       updateStatus(msg)
       clearStatus(4000)
       return { uploaded: 0, downloaded: 0, skipped: true }
+    }
+    if (isPlainHttp && cfg.allowHttpInsecure && httpWhitelist.length > 0) {
+      const targetHost = parseHostPort(baseUrl)
+      if (!isHostAllowedByWhitelist(targetHost, httpWhitelist)) {
+        const hostLabel = targetHost ? (targetHost.port ? `${targetHost.host}:${targetHost.port}` : targetHost.host) : baseUrl
+        const msg = 'HTTP 主机未被允许：' + hostLabel
+        await syncLog('[skip] ' + msg)
+        updateStatus(msg)
+        clearStatus(4000)
+        return { uploaded: 0, downloaded: 0, skipped: true }
+      }
     }
     const auth = { username: cfg.username, password: cfg.password }; await syncLog('[prep] root=' + (await getActiveLibraryRoot()) + ' remoteRoot=' + cfg.rootPath)
     try { await ensureRemoteDir(baseUrl, auth, (cfg.rootPath || '').replace(/\/+$/, '')) } catch {}
@@ -1536,6 +1603,16 @@ export async function openWebdavSyncDialog(): Promise<void> {
             <div class="upl-hint warn pad-1ch sync-http-warn hidden" style="margin-top: 6px;">
               ${t('sync.allowHttp.warn')}
             </div>
+            <div class="sync-http-hosts hidden" style="margin-top: 6px;">
+              <div class="upl-field" style="display: flex; flex-direction: column; gap: 6px;">
+                <div style="font-weight: 500;">${t('sync.allowHttp.hosts')}</div>
+                <div id="sync-http-hosts-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <button type="button" id="sync-add-http-host" class="btn-secondary" style="padding: 4px 10px;">${t('sync.allowHttp.addHost')}</button>
+                  <div class="upl-hint" style="margin: 0;">${t('sync.allowHttp.hostsHint')}</div>
+                </div>
+              </div>
+            </div>
 
             <label for="sync-timeout">${t('sync.timeout.label')}</label>
             <div class="upl-field">
@@ -1639,6 +1716,9 @@ export async function openWebdavSyncDialog(): Promise<void> {
   const elAllowHttp = overlay.querySelector('#sync-allow-http') as HTMLInputElement
   const elAllowHttpWarn = overlay.querySelector('.sync-http-warn') as HTMLDivElement | null
   const elShutdownWarn = overlay.querySelector('.sync-shutdown-warn') as HTMLDivElement | null
+  const elHttpHostsSection = overlay.querySelector('.sync-http-hosts') as HTMLDivElement | null
+  const elHttpHostsList = overlay.querySelector('#sync-http-hosts-list') as HTMLDivElement | null
+  const btnAddHttpHost = overlay.querySelector('#sync-add-http-host') as HTMLButtonElement | null
 
   const cfg = await getWebdavSyncConfig()
   elEnabled.checked = !!cfg.enabled
@@ -1655,13 +1735,84 @@ export async function openWebdavSyncDialog(): Promise<void> {
   elPass.value = cfg.password || ''
   elAllowHttp.checked = cfg.allowHttpInsecure === true
 
+  const httpHostPlaceholder = t('sync.allowHttp.hostPlaceholder')
+
+  const addHttpHostRow = (value: string) => {
+    if (!elHttpHostsList) return
+    const row = document.createElement('div')
+    row.style.display = 'flex'
+    row.style.gap = '6px'
+    row.style.alignItems = 'center'
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.placeholder = httpHostPlaceholder
+    input.value = value
+    input.style.flex = '1'
+    row.appendChild(input)
+
+    const btnRemove = document.createElement('button')
+    btnRemove.type = 'button'
+    btnRemove.textContent = '-'
+    btnRemove.title = t('sync.allowHttp.removeHost')
+    btnRemove.className = 'btn-secondary'
+    btnRemove.style.padding = '4px 10px'
+    btnRemove.addEventListener('click', () => {
+      row.remove()
+    })
+    row.appendChild(btnRemove)
+
+    elHttpHostsList.appendChild(row)
+  }
+
+  const setHttpHostRows = (values: string[]) => {
+    if (!elHttpHostsList) return
+    elHttpHostsList.innerHTML = ''
+    for (const v of values) addHttpHostRow(v)
+  }
+
+  const ensureHttpHostRowWhenVisible = () => {
+    if (!elHttpHostsList) return
+    if (elHttpHostsList.querySelectorAll('input').length === 0) {
+      addHttpHostRow('')
+    }
+  }
+
+  const getHttpHostValues = (): string[] => {
+    if (!elHttpHostsList) return []
+    const out: string[] = []
+    elHttpHostsList.querySelectorAll('input').forEach((input) => {
+      const val = input.value.trim()
+      if (val) out.push(val)
+    })
+    return out
+  }
+
+  setHttpHostRows(Array.isArray(cfg.allowedHttpHosts) ? cfg.allowedHttpHosts : [])
+
   const refreshAllowHttpWarn = () => {
     if (!elAllowHttpWarn) return
     if (elAllowHttp.checked) elAllowHttpWarn.classList.remove('hidden')
     else elAllowHttpWarn.classList.add('hidden')
   }
   refreshAllowHttpWarn()
-  elAllowHttp.addEventListener('change', refreshAllowHttpWarn)
+  const refreshHttpHostsVisibility = () => {
+    if (!elHttpHostsSection) return
+    if (elAllowHttp.checked) {
+      elHttpHostsSection.classList.remove('hidden')
+      ensureHttpHostRowWhenVisible()
+    } else {
+      elHttpHostsSection.classList.add('hidden')
+    }
+  }
+  refreshHttpHostsVisibility()
+  elAllowHttp.addEventListener('change', () => {
+    refreshAllowHttpWarn()
+    refreshHttpHostsVisibility()
+  })
+  btnAddHttpHost?.addEventListener('click', () => {
+    addHttpHostRow('')
+  })
 
   const refreshShutdownWarn = () => {
     if (!elShutdownWarn) return
@@ -1688,6 +1839,7 @@ export async function openWebdavSyncDialog(): Promise<void> {
         username: elUser.value,
         password: elPass.value,
         allowHttpInsecure: elAllowHttp.checked,
+        allowedHttpHosts: getHttpHostValues(),
       })
       // 反馈
       try { const el = document.getElementById('status'); if (el) { el.textContent = t('sync.saved'); setTimeout(() => { try { el.textContent = '' } catch {} }, 1200) } } catch {}

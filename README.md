@@ -215,8 +215,17 @@ FlyMD 支持通过扩展插件增强功能：
 - [highlight.js](https://highlightjs.org/) - 代码高亮
 - [KaTeX](https://katex.org/) - 数学公式渲染
 - [Mermaid](https://mermaid.js.org/) - 图表绘制
-- [siliconflow](https://cloud.siliconflow.cn/i/X96CT74a) - 模型支持
+- [Siliconflow](https://cloud.siliconflow.cn/i/X96CT74a) - 模型支持
 
+<div align="center">
+  <a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="public/plugins/ai-assistant/Powered-by-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="public/plugins/ai-assistant/Powered-by-light.png">
+      <img alt="Powered by SiliconFlow" src="public/plugins/ai-assistant/Powered-by-light.png" width="240">
+    </picture>
+  </a>
+</div>
 ## 🤝 贡献指南
 
 欢迎提交 Issue 和 Pull Request！

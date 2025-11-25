@@ -213,8 +213,17 @@ Full License: [LICENSE](LICENSE) | Third-Party Components: [THIRD-PARTY-NOTICES.
 - [highlight.js](https://highlightjs.org/) - Code highlighting
 - [KaTeX](https://katex.org/) - Math formula rendering
 - [Mermaid](https://mermaid.js.org/) - Diagram drawing
-- [siliconflow](https://cloud.siliconflow.cn/i/X96CT74a) - Model support
+- [Siliconflow](https://cloud.siliconflow.cn/i/X96CT74a) - Model support
 
+<div align="center">
+  <a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="public/plugins/ai-assistant/Powered-by-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="public/plugins/ai-assistant/Powered-by-light.png">
+      <img alt="Powered by SiliconFlow" src="public/plugins/ai-assistant/Powered-by-light.png" width="240">
+    </picture>
+  </a>
+</div>
 ## 🤝 Contributing
 
 Issues and Pull Requests are welcome!

@@ -2,6 +2,16 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.4.2 (Preview)
+- Added: Multi-tab editing with `Ctrl+T` new tab, `Ctrl+Tab / Ctrl+Shift+Tab` tab cycling, plus `Ctrl + Left Click` to open docs in background tabs for parallel editing
+- Added: Library sidebar now has dedicated rename/delete shortcuts so hopping between files in the new tab system no longer requires constant mouse travel
+- Added: WYSIWYG code blocks gain a one-tap copy button, making it easier to share snippets or paste commands elsewhere
+- Added: Plugin marketplace accepts local installation sources so you can side-load or debug private extensions completely offline
+- Improved: WebDAV sync allows plain HTTP connections and the settings panel layout is refreshed, simplifying LAN / self-hosted NAS setups
+- Improved: Theme dialog and AI conversation windows receive new placements, bubble styles, and z-index fixes so dark-mode toggles no longer cause flicker
+- Improved: AI chats can create todos and reminders directly in the thread while document-context actions stay in the right-click menu workflow
+- Fixed: Restored Delete key text editing instead of deleting files, refreshed outline updates in Edit mode, let inline code exit correctly in WYSIWYG, and resolved sporadic top-bar occlusion to stay compatible with prior releases
+
 ## Update v0.4.1
 - Improved: Library sidebar open/close state is now persisted and restored across restarts and mode switches; first open automatically refreshes the tree to prevent empty panels
 - Fixed: Focus Mode no longer hides the folder toggle arrows, so the library tree remains expandable even when WYSIWYG/Focus Mode is active

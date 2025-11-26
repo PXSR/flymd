@@ -30,6 +30,7 @@ import { enableWysiwygV2, disableWysiwygV2, wysiwygV2ToggleBold, wysiwygV2Toggle
 // Tauri 插件（v2）
 // Tauri 对话框：使用 ask 提供原生确认，避免浏览器 confirm 在关闭事件中失效
 import { open, save, ask } from '@tauri-apps/plugin-dialog'
+import { showThreeButtonDialog } from './dialog'
 import { readTextFile, writeTextFile, readDir, stat, readFile, mkdir  , rename, remove, writeFile, exists, copyFile } from '@tauri-apps/plugin-fs'
 import { Store } from '@tauri-apps/plugin-store'
 import { open as openFileHandle, BaseDirectory } from '@tauri-apps/plugin-fs'
@@ -8811,20 +8812,21 @@ function bindEvents() {
       let shouldExit = false
       let wantSave = false
 
-      try {
-        // 单次确认：是否保存后退出？
-        // 用户选"是"→保存并退出；选"否"→不保存直接退出
-        const saveThenExit = await ask('检测到当前文档有未保存的更改。是否保存后退出？\n\n选择"否"将放弃更改直接退出。', { title: '退出确认' })
-        if (saveThenExit) {
-          wantSave = true
-        } else {
-          // 用户选择"否"，不保存直接退出
-          shouldExit = true
-        }
-      } catch (e) {
-        // 插件不可用或权限不足时，降级到浏览器 confirm
-        const leave = typeof confirm === 'function' ? confirm('当前文件尚未保存，确认退出吗？未保存的更改将丢失。') : false
-        shouldExit = !!leave
+      // 使用自定义三按钮对话框
+      const result = await showThreeButtonDialog(
+        '检测到当前文档有未保存的更改',
+        '退出确认'
+      )
+
+      if (result === 'save') {
+        // 保存并退出
+        wantSave = true
+      } else if (result === 'discard') {
+        // 直接退出，放弃更改
+        shouldExit = true
+      } else {
+        // cancel - 取消退出，不做任何操作
+        return
       }
 
       if (wantSave) {

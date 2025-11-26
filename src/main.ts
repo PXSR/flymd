@@ -730,6 +730,7 @@ type ContextMenuItemConfig = {
   disabled?: boolean
   type?: 'group' | 'divider'
   note?: string
+  tooltip?: string
 }
 type PluginContextMenuItem = {
   pluginId: string
@@ -1375,6 +1376,7 @@ async function buildBuiltinContextMenuItems(): Promise<ContextMenuItemConfig[]> 
     label: t('menu.portableMode') || '便携模式',
     icon: '💼',
     note: portableEnabled ? (t('portable.enabledShort') || '已开启') : (t('portable.disabledShort') || '未开启'),
+    tooltip: t('portable.tooltip') || '开启后将在程序目录写入所有配置，方便在U盘等便携设备上使用',
     onClick: async () => { await togglePortableModeFromMenu() }
   })
   return items
@@ -1710,6 +1712,18 @@ function buildContextMenuContext(): ContextMenuContext {
   }
 }
 
+function escapeAttrValue(input: string): string {
+  try {
+    return String(input)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+  } catch {
+    return ''
+  }
+}
+
 // 渲染右键菜单项
 // dragKey: 拖拽标识（仅插件菜单项有）; isBuiltin: 是否为内置项（内置项不可拖拽）
 function renderContextMenuItem(
@@ -1745,6 +1759,11 @@ function renderContextMenuItem(
   const canDrag = !isBuiltin && !!dragKey
   const dragKeyAttr = canDrag ? `data-drag-key="${dragKey}"` : ''
   const dragClass = canDrag ? ' draggable-item' : ''
+  const tooltipAttr = item.tooltip ? `title="${escapeAttrValue(item.tooltip)}"` : ''
+  const extraAttrs: string[] = []
+  if (dragKeyAttr) extraAttrs.push(dragKeyAttr)
+  if (tooltipAttr) extraAttrs.push(tooltipAttr)
+  const extraAttrStr = extraAttrs.length > 0 ? (' ' + extraAttrs.join(' ')) : ''
 
   // 子菜单
   if (item.children && item.children.length > 0) {
@@ -1765,7 +1784,7 @@ function renderContextMenuItem(
     }
 
     return `
-      <div class="context-menu-item has-children${disabled}${dragClass}" data-id="${id}" ${dragKeyAttr}>
+      <div class="context-menu-item has-children${disabled}${dragClass}" data-id="${id}"${extraAttrStr}>
         ${icon}<span class="context-menu-label">${item.label || ''}</span>${note}
         <span class="context-menu-arrow">▸</span>
         <div class="context-menu-submenu">${childrenHtml}</div>
@@ -1784,7 +1803,7 @@ function renderContextMenuItem(
   }
 
   return `
-    <div class="context-menu-item${disabled}${dragClass}" data-id="${id}" ${dragKeyAttr}>
+    <div class="context-menu-item${disabled}${dragClass}" data-id="${id}"${extraAttrStr}>
       ${icon}<span class="context-menu-label">${item.label || ''}</span>${note}
     </div>
   `

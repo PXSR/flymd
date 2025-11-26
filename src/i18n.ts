@@ -50,6 +50,7 @@ const dict = {
     'portable.enabledShort': '已开启',
     'portable.disabledShort': '未开启',
     'portable.toggleFail': '切换便携模式失败',
+    'portable.tooltip': '开启后将在程序目录写入所有配置，方便在U盘等便携设备上使用',
     'menu.exportConfig': '导出配置',
     'menu.importConfig': '导入配置',
 
@@ -248,6 +249,7 @@ const dict = {
     'portable.enabledShort': 'On',
     'portable.disabledShort': 'Off',
     'portable.toggleFail': 'Failed to toggle portable mode',
+    'portable.tooltip': 'When enabled, saves all configs next to the app so it can run from USB drives',
     'menu.exportConfig': 'Export Config',
     'menu.importConfig': 'Import Config',
 

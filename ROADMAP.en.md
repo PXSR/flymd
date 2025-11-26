@@ -2,6 +2,16 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.4.7
+- Added: Full configuration export/import so you can back up or migrate all FlyMD settings, extensions, and cache data in one shot.
+- Added: Portable Mode to store config alongside the app root, making it easy to carry FlyMD on a USB drive.
+- Added: Tab right-click menu so actions like closing or pinning a tab can be done directly on the tab bar (details will be iterated in later builds).
+- Improved: Adjusted `Ctrl+N` behavior to better fit the multi-tab workflow so new files and new tabs behave more intuitively together.
+- Improved: When all tabs are closed, FlyMD now returns to a blank document in edit mode instead of leaving you in a “no document” state.
+- Improved: Unified the plugin notification system through a top notification center and exposed new `showNotification / hideNotification` APIs for extensions.
+- Improved: In the AI Assistant extension, the “Continue / Polish / Correct” quick actions can now focus only on the selected text, making right-click workflows selection-aware.
+- Added: Reserved keyboard shortcut `Alt+W` for closing the current tab .
+
 ## Update v0.4.6
 - Added: Right-click context menu items now support drag-and-drop sorting with persistent storage, while built-in entries stay locked to prevent mistakes.
 - Added: Exit prompts and WebDAV conflict/delete confirmations are replaced with custom three-button dialogs (Save / Discard / Cancel) so every choice is explicit.

@@ -169,6 +169,7 @@ sudo xattr -r -d com.apple.quarantine /Applications/flymd.app
 |------|--------|
 | 新建文件 | `Ctrl+N` |
 | 新建标签页 | `Ctrl+T` |
+| 关闭当前标签页 | `Alt+W` |
 | 打开文件 | `Ctrl+O` |
 | 保存文件 | `Ctrl+S` |
 | 另存为 | `Ctrl+Shift+S` |
@@ -182,6 +183,10 @@ sudo xattr -r -d com.apple.quarantine /Applications/flymd.app
 | 斜体 | `Ctrl+I` |
 | 插入链接 | `Ctrl+K` |
 | 查找替换 | `Ctrl+H` |
+
+### 配置与便携
+- 支持在菜单中一键**导出配置**与**导入配置**，方便在多台设备间迁移完整环境（包含扩展与设置）
+- 支持开启**便携模式**，将所有配置写入应用根目录，适合放在 U 盘中随身携带
 
 ### 多标签页
 - `Ctrl+T` 随时开启空白标签页，保持当前文档不被覆盖

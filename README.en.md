@@ -168,6 +168,7 @@ sudo xattr -r -d com.apple.quarantine /Applications/flymd.app
 |-----------|----------|
 | New File | `Ctrl+N` |
 | New Tab | `Ctrl+T` |
+| Close Current Tab | `Alt+W` |
 | Open File | `Ctrl+O` |
 | Save File | `Ctrl+S` |
 | Save As | `Ctrl+Shift+S` |
@@ -181,6 +182,10 @@ sudo xattr -r -d com.apple.quarantine /Applications/flymd.app
 | Italic | `Ctrl+I` |
 | Insert Link | `Ctrl+K` |
 | Find & Replace | `Ctrl+H` |
+
+### Config & Portability
+- Support one-click **Export Config** and **Import Config** from the menu to migrate your full environment (including extensions and settings) across machines
+- Support **Portable Mode** so all config lives next to the app root, ideal for carrying FlyMD on a USB drive
 
 ### Multi-Tab Workflow
 - Press `Ctrl+T` anytime to launch a blank tab so the current draft stays intact

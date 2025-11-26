@@ -7,7 +7,7 @@
 
 import { tabManager, TabManagerHooks } from './TabManager'
 import { TabBar } from './TabBar'
-import type { EditorMode } from './types'
+import type { EditorMode, TabDocument } from './types'
 
 // 全局引用
 let tabBar: TabBar | null = null
@@ -173,6 +173,38 @@ function showCloseConfirmDialog(fileName: string): Promise<'save' | 'discard' | 
 }
 
 /**
+ * 统一处理标签关闭前的未保存确认逻辑
+ */
+async function confirmTabClose(tab: TabDocument): Promise<boolean> {
+  // 未修改直接允许关闭
+  if (!tab.dirty) return true
+
+  // 获取文件名用于显示
+  const fileName = tab.filePath
+    ? tab.filePath.replace(/\\/g, '/').split('/').pop() || '未命名'
+    : '未命名'
+
+  // 显示三按钮对话框
+  const result = await showCloseConfirmDialog(fileName)
+
+  if (result === 'cancel') {
+    return false // 取消关闭
+  }
+
+  if (result === 'save') {
+    // 切换到该标签并保存
+    await tabManager.switchToTab(tab.id)
+    const flymd = getFlymd()
+    if (flymd.flymdSaveFile) {
+      await flymd.flymdSaveFile()
+    }
+  }
+
+  // 'save' 或 'discard' 都允许关闭
+  return true
+}
+
+/**
  * 初始化标签系统
  * 在 DOM 就绪后调用
  */
@@ -209,32 +241,7 @@ export async function initTabSystem(): Promise<void> {
     container: tabbarContainer,
     tabManager,
     onBeforeClose: async (tab) => {
-      if (!tab.dirty) return true
-
-      // 获取文件名用于显示
-      const fileName = tab.filePath
-        ? tab.filePath.replace(/\\/g, '/').split('/').pop() || '未命名'
-        : '未命名'
-
-      // 显示三按钮对话框
-      const result = await showCloseConfirmDialog(fileName)
-
-      if (result === 'cancel') {
-        return false // 取消关闭
-      }
-
-      if (result === 'save') {
-        // 先切换到该标签
-        await tabManager.switchToTab(tab.id)
-        // 保存文件
-        const flymd = getFlymd()
-        if (flymd.flymdSaveFile) {
-          await flymd.flymdSaveFile()
-        }
-      }
-
-      // 'save' 或 'discard' 都允许关闭
-      return true
+      return await confirmTabClose(tab)
     }
   })
   tabBar.init()
@@ -569,6 +576,19 @@ function hookKeyboardShortcuts(): void {
       } else {
         tabManager.createNewTab()
       }
+      return
+    }
+
+    // Alt+W - 关闭当前标签（带未保存确认）
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.altKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault()
+      const currentTab = tabManager.getActiveTab()
+      if (!currentTab) return
+
+      const confirmed = await confirmTabClose(currentTab)
+      if (!confirmed) return
+
+      await tabManager.closeTab(currentTab.id)
       return
     }
 

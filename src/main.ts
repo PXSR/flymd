@@ -735,6 +735,43 @@ type PluginContextMenuItem = {
   config: ContextMenuItemConfig
 }
 const PLUGINS_DIR = 'flymd/plugins'
+let _appLocalDataDirCached: string | null | undefined
+async function getAppLocalDataDirCached(): Promise<string | null> {
+  if (typeof _appLocalDataDirCached !== 'undefined') return _appLocalDataDirCached
+  try {
+    const mod: any = await import('@tauri-apps/api/path')
+    if (mod && typeof mod.appLocalDataDir === 'function') {
+      const dir = await mod.appLocalDataDir()
+      if (dir && typeof dir === 'string') {
+        _appLocalDataDirCached = dir.replace(/[\\/]+$/, '')
+        return _appLocalDataDirCached
+      }
+    }
+  } catch {}
+  _appLocalDataDirCached = null
+  return _appLocalDataDirCached
+}
+async function resolvePluginInstallAbsolute(dir: string): Promise<string | null> {
+  try {
+    const base = await getAppLocalDataDirCached()
+    if (!base) return null
+    const sep = base.includes('\\') ? '\\' : '/'
+    const cleaned = String(dir || '').replace(/^[/\\]+/, '').replace(/[\\/]+/g, '/')
+    if (!cleaned) return base
+    return base + sep + cleaned.replace(/\//g, sep)
+  } catch { return null }
+}
+function toPluginAssetUrl(absDir: string | null, relPath: string): string {
+  try {
+    if (!absDir) return ''
+    let rel = String(relPath || '').trim()
+    if (!rel) return ''
+    rel = rel.replace(/^[/\\]+/, '').replace(/[\\/]+/g, '/')
+    const sep = absDir.includes('\\') ? '\\' : '/'
+    const abs = absDir + sep + rel.replace(/\//g, sep)
+    return typeof convertFileSrc === 'function' ? convertFileSrc(abs) : abs
+  } catch { return '' }
+}
 const builtinPlugins: InstalledPlugin[] = [
   { id: 'uploader-s3', name: '图床 (S3/R2)', version: 'builtin', enabled: undefined, dir: '', main: '', builtin: true, description: '粘贴/拖拽图片自动上传，支持 S3/R2 直连，使用设置中的凭据。' },
   { id: 'webdav-sync', name: 'WebDAV 同步', version: 'builtin', enabled: undefined, dir: '', main: '', builtin: true, description: 'F5/启动/关闭前同步，基于修改时间覆盖' }
@@ -9754,6 +9791,7 @@ async function activatePlugin(p: InstalledPlugin): Promise<void> {
   const dataUrl = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(code)
   const mod: any = await import(/* @vite-ignore */ dataUrl)
   const http = await getHttpClient()
+  const pluginAssetsAbs = await resolvePluginInstallAbsolute(p.dir)
   async function openAiWindow() {
     try {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
@@ -9765,6 +9803,7 @@ async function activatePlugin(p: InstalledPlugin): Promise<void> {
     http,
     invoke,
     openAiWindow,
+    getAssetUrl: (relPath: string) => toPluginAssetUrl(pluginAssetsAbs, relPath),
     storage: {
       get: async (key: string) => {
         try { if (!store) return null; const all = (await store.get('plugin:' + p.id)) as any || {}; return all[key] } catch { return null }

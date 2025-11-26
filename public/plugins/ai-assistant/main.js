@@ -102,6 +102,18 @@ function WIN(){ return (window.__AI_WIN__ || window) }
 function el(id) { return DOC().getElementById(id) }
 function lastUserMsg() { try { const arr = __AI_SESSION__.messages; for (let i = arr.length - 1; i >= 0; i--) { if (arr[i].role === 'user') return String(arr[i].content || '') } } catch {} return '' }
 function shorten(s, n){ const t = String(s||'').trim(); return t.length>n? (t.slice(0,n)+'…') : t }
+function resolvePluginAsset(rel){
+  let clean = String(rel || '').trim()
+  if (!clean) return ''
+  clean = clean.replace(/^[/\\]+/, '').replace(/[\\/]+/g, '/')
+  try {
+    if (__AI_CONTEXT__ && typeof __AI_CONTEXT__.getAssetUrl === 'function') {
+      const url = __AI_CONTEXT__.getAssetUrl(clean)
+      if (url) return url
+    }
+  } catch {}
+  return `plugins/ai-assistant/${clean}`
+}
 function isFreeProvider(cfg){ return !!cfg && cfg.provider === 'free' }
 function normalizeFreeModelKey(key){
   const raw = String(key || '').trim().toLowerCase()
@@ -527,7 +539,7 @@ function renderMsgs(root) {
     if (m.role === 'assistant') {
       const avatar = DOC().createElement('img')
       avatar.className = 'ai-avatar'
-      avatar.src = 'plugins/ai-assistant/Flymdnew.png'
+      avatar.src = resolvePluginAsset('Flymdnew.png')
       avatar.alt = 'AI'
       wrapper.appendChild(avatar)
     }
@@ -931,7 +943,7 @@ async function refreshHeader(context){
             isDark = !!(WIN().matchMedia && WIN().matchMedia('(prefers-color-scheme: dark)').matches)
           }
         }
-        modelPoweredImg.src = isDark ? 'plugins/ai-assistant/Powered-by-dark.png' : 'plugins/ai-assistant/Powered-by-light.png'
+      modelPoweredImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
       }
     }
   } catch {}
@@ -2180,7 +2192,7 @@ export async function openSettings(context){
             isDark = !!(WIN().matchMedia && WIN().matchMedia('(prefers-color-scheme: dark)').matches)
           }
         }
-        elPoweredByImg.src = isDark ? 'plugins/ai-assistant/Powered-by-dark.png' : 'plugins/ai-assistant/Powered-by-light.png'
+        elPoweredByImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
       }
     }
   }
@@ -2454,7 +2466,7 @@ async function applyWinTheme(context, rootEl){
     if (isFreeProvider(cfg)) {
       const modelPoweredImg = el('ai-model-powered-img')
       if (modelPoweredImg) {
-        modelPoweredImg.src = isDark ? 'plugins/ai-assistant/Powered-by-dark.png' : 'plugins/ai-assistant/Powered-by-light.png'
+        modelPoweredImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
       }
     }
     if (!__AI_MQ_BOUND__){

@@ -539,8 +539,55 @@ async function buildDir(root: string, dir: string, parent: HTMLElement) {
       row.appendChild(iconEl); row.appendChild(label)
       try { if (ext) row.classList.add('file-ext-' + ext) } catch {}
 
-      // 单击加载文档并保持选中
-      row.addEventListener('click', async () => { saveSelection(e.path, false, row); try { await state.opts?.onOpenFile(e.path) } catch {} })
+      // 单击加载文档并保持选中；支持 Ctrl+左键在新标签中打开并进入编辑模式
+      row.addEventListener('click', async (ev) => {
+        try {
+          // 忽略非左键点击，以及双击序列中的第二次点击（交给 dblclick 处理）
+          if (ev.button !== 0 || ev.detail > 1) return
+        } catch {}
+
+        saveSelection(e.path, false, row)
+
+        const isCtrlLike = !!(ev.ctrlKey || ev.metaKey)
+        const win = (window as any)
+
+        // Ctrl+左键：通过全局 flymdOpenFile（带标签系统）打开
+        if (isCtrlLike && win && typeof win.flymdOpenFile === 'function') {
+          ev.preventDefault()
+          try { ev.stopPropagation() } catch {}
+          const getPath = () => {
+            try { return typeof win.flymdGetCurrentFilePath === 'function' ? win.flymdGetCurrentFilePath() : null } catch { return null }
+          }
+          const beforePath = getPath()
+          try {
+            await win.flymdOpenFile(e.path)
+          } catch {
+            // 回退到原有回调，避免功能完全失效
+            try { await state.opts?.onOpenFile(e.path) } catch {}
+          }
+
+          const afterPath = getPath()
+          const getMode = () => {
+            try { return typeof win.flymdGetMode === 'function' ? win.flymdGetMode() : null } catch { return null }
+          }
+          const getWysiwyg = () => {
+            try { return typeof win.flymdGetWysiwygEnabled === 'function' ? !!win.flymdGetWysiwygEnabled() : false } catch { return false }
+          }
+
+          // 仅在“真正切换到了目标文档”且当前不在纯文本编辑态时，才模拟 Ctrl+E 逻辑
+          const shouldToggle =
+            afterPath && afterPath === e.path && afterPath !== beforePath &&
+            (getMode() !== 'edit' || getWysiwyg())
+
+          if (shouldToggle && typeof win.flymdToggleModeShortcut === 'function') {
+            try { await win.flymdToggleModeShortcut() } catch {}
+          }
+          return
+        }
+
+        // 普通单击：沿用旧行为
+        try { await state.opts?.onOpenFile(e.path) } catch {}
+      })
       // 双击加载，兼容旧习惯
       row.addEventListener('dblclick', async () => { await state.opts?.onOpenFile(e.path) })
 

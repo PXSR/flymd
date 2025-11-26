@@ -5428,6 +5428,19 @@ async function toggleMode() {
   try { window.dispatchEvent(new CustomEvent('flymd:mode:changed', { detail: { mode } })) } catch {}
 }
 
+// 提取 Ctrl+E 的切换逻辑，供快捷键和其它入口共用
+async function handleToggleModeShortcut() {
+  if (wysiwyg) {
+    try { await setWysiwygEnabled(false) } catch {}
+    // 更新专注模式侧栏背景色
+    setTimeout(() => updateFocusSidebarBg(), 100)
+    return
+  }
+  await toggleMode()
+  // 更新专注模式侧栏背景色
+  setTimeout(() => updateFocusSidebarBg(), 100)
+}
+
 // 打开文件
 async function openFile(preset?: string) {
   try {
@@ -6504,6 +6517,8 @@ try {
     // UI 刷新
     ;(window as any).flymdRefreshTitle = () => refreshTitle()
     ;(window as any).flymdRefreshPreview = () => { try { renderPreview() } catch {} }
+    // 模式切换快捷逻辑（等价于 Ctrl+E）
+    ;(window as any).flymdToggleModeShortcut = () => handleToggleModeShortcut()
     // 文件操作
     ;(window as any).flymdOpenFile = openFile2
     ;(window as any).flymdNewFile = newFile
@@ -9044,15 +9059,7 @@ function bindEvents() {
       e.preventDefault();
       try { e.stopPropagation() } catch {}
       try { (e as any).stopImmediatePropagation && (e as any).stopImmediatePropagation() } catch {}
-      if (wysiwyg) {
-        try { await setWysiwygEnabled(false) } catch {};
-        // 更新专注模式侧栏背景色
-        setTimeout(() => updateFocusSidebarBg(), 100);
-        return
-      }
-      await toggleMode();
-      // 更新专注模式侧栏背景色
-      setTimeout(() => updateFocusSidebarBg(), 100);
+      await handleToggleModeShortcut();
       return
     }
     if (e.ctrlKey && e.key.toLowerCase() === 'b') { e.preventDefault(); await formatBold(); if (mode === 'preview') void renderPreview(); else if (wysiwyg) scheduleWysiwygRender(); return }

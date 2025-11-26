@@ -39,6 +39,15 @@ const log = (...args) => {
     }
 }
 
+// 检查是否有选中文本
+function hasSelectedText(selectedText) {
+    try {
+        return selectedText && selectedText.trim().length > 0
+    } catch {
+        return false
+    }
+}
+
 // 注入设置面板样式（仿 AI 助手风格，简化版）
 function ensureXxtuiCss() {
     try {
@@ -681,10 +690,8 @@ async function pushInstantBatch(context, cfg, todos, filterLabel, keyObj) {
     lines.push('提醒列表（' + label + '，共 ' + list.length + ' 条）：')
     lines.push('')
     list.forEach((todo, idx) => {
-        const text = String(todo && todo.title || '').trim() || '待办事项'
-        const status = todoStatusTag(todo)
-        const lineNum = todo && todo.line ? '（行 ' + todo.line + '）' : ''
-        lines.push((idx + 1) + '. ' + status + ' ' + text + lineNum)
+        const content = String(todo && todo.content || '').trim() || '- [ ] 待办事项'
+        lines.push((idx + 1) + '. ' + content)
     })
     lines.push('')
     lines.push('来源：' + ((cfg && cfg.from) || '飞速MarkDown'))
@@ -723,10 +730,11 @@ async function pushScheduledTodo(context, cfg, todo, keyObj) {
     if (!ts || !Number.isFinite(ts)) throw new Error('BAD_TIME')
 
     const url = 'https://www.xxtui.com/scheduled/reminder/' + encodeURIComponent(key)
+    const content = String(todo && todo.content || '').trim()
     const text = String(todo && todo.title || '').trim()
     const title = '[TODO] ' + (text || '待办事项')
     const lines = []
-    const mainText = text || title
+    const mainText = content || text || '- [ ] 待办事项'
     lines.push('提醒内容:')
     lines.push(mainText)
     // 追加具体提醒时间
@@ -765,7 +773,7 @@ async function pushScheduledTodo(context, cfg, todo, keyObj) {
     }
 }
 
-async function runPushFlow(context, cfg, type, keyObj) {
+async function runPushFlow(context, cfg, type, keyObj, selectedText) {
     log('开始推送流程', { type, keyObj: keyObj ? 'custom' : 'default' })
 
     if (!context || !context.getEditorValue) {
@@ -775,7 +783,8 @@ async function runPushFlow(context, cfg, type, keyObj) {
         return
     }
 
-    const content = context.getEditorValue()
+    // 如果提供了选中的文本，则只解析选中的文本；否则解析全文
+    const content = selectedText || context.getEditorValue()
     const allTodos = extractTodos(content)
     log('解析到待办数量', allTodos.length)
     if (!allTodos.length) {
@@ -811,7 +820,7 @@ async function runPushFlow(context, cfg, type, keyObj) {
     }
 }
 
-async function runReminderFlow(context, cfg, keyObj) {
+async function runReminderFlow(context, cfg, keyObj, selectedText) {
     log('开始提醒流程', { keyObj: keyObj ? 'custom' : 'default' })
 
     if (!context || !context.getEditorValue) {
@@ -821,7 +830,8 @@ async function runReminderFlow(context, cfg, keyObj) {
         return
     }
 
-    const content = context.getEditorValue()
+    // 如果提供了选中的文本，则只解析选中的文本；否则解析全文
+    const content = selectedText || context.getEditorValue()
     const allTodos = extractTodos(content)
     log('解析到待办数量（提醒）', allTodos.length)
     if (!allTodos.length) {
@@ -1038,7 +1048,7 @@ async function parseAndCreateReminders(content) {
 
 // ========== 菜单处理函数 ==========
 
-async function handleMenuAction(context, action, keyObj) {
+async function handleMenuAction(context, action, keyObj, selectedText) {
     try {
         log('处理菜单动作', action)
 
@@ -1068,7 +1078,7 @@ async function handleMenuAction(context, action, keyObj) {
         }
 
         if (action === MENU_ACTIONS.CREATE_REMINDER) {
-            await runReminderFlow(context, cfg, actualKeyObj)
+            await runReminderFlow(context, cfg, actualKeyObj, selectedText)
             return
         }
 
@@ -1077,7 +1087,7 @@ async function handleMenuAction(context, action, keyObj) {
             action === MENU_ACTIONS.PUSH_DONE ||
             action === MENU_ACTIONS.PUSH_TODO
         ) {
-            await runPushFlow(context, cfg, action, actualKeyObj)
+            await runPushFlow(context, cfg, action, actualKeyObj, selectedText)
             return
         }
     } catch (e) {
@@ -1090,7 +1100,7 @@ async function handleMenuAction(context, action, keyObj) {
 }
 
 // 处理"选择 Key"弹窗选择
-async function handlePushWithKeyPicker(context) {
+async function handlePushWithKeyPicker(context, selectedText) {
     try {
         const cfg = await loadCfg(context)
         const allKeys = cfg.apiKeys || []
@@ -1105,7 +1115,7 @@ async function handlePushWithKeyPicker(context) {
         const result = await showKeyPicker(allKeys, defaultKey)
         if (!result || !result.keyObj || !result.action) return
 
-        await handleMenuAction(context, result.action, result.keyObj)
+        await handleMenuAction(context, result.action, result.keyObj, selectedText)
     } catch (e) {
         log('选择Key推送失败', e)
     }
@@ -1138,7 +1148,13 @@ async function registerContextMenus(context) {
         label: '推送到 xxtui',
         icon: '📤',
         condition,
-        onClick: () => handlePushWithKeyPicker(context)
+        onClick: (ctx) => {
+            if (!hasSelectedText(ctx.selectedText)) {
+                showConfirm('请先选择要推送的文本内容').then(() => {});
+                return
+            }
+            handlePushWithKeyPicker(context, ctx.selectedText)
+        }
     })
 
     // 一级：创建提醒（使用默认 Key）
@@ -1146,7 +1162,13 @@ async function registerContextMenus(context) {
             label: '创建提醒 (@时间)',
             icon: '⏰',
             condition,
-            onClick: () => handleMenuAction(context, MENU_ACTIONS.CREATE_REMINDER, defaultKey)
+            onClick: (ctx) => {
+                if (!hasSelectedText(ctx.selectedText)) {
+                    showConfirm('请先选择要创建提醒的文本内容').then(() => {});
+                    return
+                }
+                handleMenuAction(context, MENU_ACTIONS.CREATE_REMINDER, defaultKey, ctx.selectedText)
+            }
         })
 
     ;[pushDisposer, reminderDisposer].forEach((d) => {
@@ -1179,22 +1201,54 @@ export function activate(context) {
                 {
                     label: '全部',
                     note: '含已完成/未完成',
-                    onClick: () => handleMenuAction(context, MENU_ACTIONS.PUSH_ALL)
+                    onClick: (ctx) => {
+                        // 尝试从 ctx 获取选中的文本，如果获取不到则尝试从 context 获取
+                        const selectedText = ctx && ctx.selectedText || (context && context.getSelection && context.getSelection()) || ''
+                        if (!hasSelectedText(selectedText)) {
+                            showConfirm('请先选择要推送的文本内容').then(() => {});
+                            return
+                        }
+                        handleMenuAction(context, MENU_ACTIONS.PUSH_ALL, null, selectedText)
+                    }
                 },
                 {
                     label: '已完成',
-                    onClick: () => handleMenuAction(context, MENU_ACTIONS.PUSH_DONE)
+                    onClick: (ctx) => {
+                        // 尝试从 ctx 获取选中的文本，如果获取不到则尝试从 context 获取
+                        const selectedText = ctx && ctx.selectedText || (context && context.getSelection && context.getSelection()) || ''
+                        if (!hasSelectedText(selectedText)) {
+                            showConfirm('请先选择要推送的文本内容').then(() => {});
+                            return
+                        }
+                        handleMenuAction(context, MENU_ACTIONS.PUSH_DONE, null, selectedText)
+                    }
                 },
                 {
                     label: '未完成',
-                    onClick: () => handleMenuAction(context, MENU_ACTIONS.PUSH_TODO)
+                    onClick: (ctx) => {
+                        // 尝试从 ctx 获取选中的文本，如果获取不到则尝试从 context 获取
+                        const selectedText = ctx && ctx.selectedText || (context && context.getSelection && context.getSelection()) || ''
+                        if (!hasSelectedText(selectedText)) {
+                            showConfirm('请先选择要推送的文本内容').then(() => {});
+                            return
+                        }
+                        handleMenuAction(context, MENU_ACTIONS.PUSH_TODO, null, selectedText)
+                    }
                 },
                 { type: 'divider' },
                 { type: 'group', label: '提醒' },
                 {
                     label: '创建提醒',
                     note: '@时间',
-                    onClick: () => handleMenuAction(context, MENU_ACTIONS.CREATE_REMINDER)
+                    onClick: (ctx) => {
+                        // 尝试从 ctx 获取选中的文本，如果获取不到则尝试从 context 获取
+                        const selectedText = ctx && ctx.selectedText || (context && context.getSelection && context.getSelection()) || ''
+                        if (!hasSelectedText(selectedText)) {
+                            showConfirm('请先选择要创建提醒的文本内容').then(() => {});
+                            return
+                        }
+                        handleMenuAction(context, MENU_ACTIONS.CREATE_REMINDER, null, selectedText)
+                    }
                 }
             ]
         })

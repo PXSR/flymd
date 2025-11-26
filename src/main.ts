@@ -9063,7 +9063,14 @@ function bindEvents() {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); await openFile2(); return }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); await saveAs(); return }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); await saveFile(); return }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); await newFile(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+      e.preventDefault()
+      const flymd = (window as any)
+      if (flymd.flymdNewFile) {
+        await flymd.flymdNewFile()
+      }
+      return
+    }
     try {
       const lib = document.getElementById('library') as HTMLDivElement | null
       const libVisible = lib && !lib.classList.contains('hidden')

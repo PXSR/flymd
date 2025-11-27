@@ -20,6 +20,10 @@
   --wysiwyg-status-h: 24px;        /* 状态条高度 */
   --wysiwyg-status-bg: #d9e2f2;    /* 状态条背景 */
   --code-bg: #f6f8fa;              /* 代码块背景（亮） */
+  /* 便签模式背景色（默认白） */
+  --sticky-rgb: 255, 255, 255;
+  /* 便签模式前景色（可选覆盖） */
+  --sticky-fg: ;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -5341,6 +5345,7 @@ body.sticky-note-mode .preview-body p,
 body.sticky-note-mode .preview-body li {
   font-size: 14px !important;
   line-height: 1.4 !important;
+  color: var(--sticky-fg, var(--fg));
 }
 
 body.sticky-note-mode li.task-list-item {
@@ -5367,16 +5372,10 @@ body.sticky-note-mode {
 /* 便签模式：内容区域半透明背景 */
 body.sticky-note-mode .container,
 body.sticky-note-mode .preview {
-  background: rgba(255, 255, 255, var(--sticky-opacity, 0.85)) !important;
+  background: rgba(var(--sticky-rgb, 255, 255, 255), var(--sticky-opacity, 0.85)) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-radius: 8px;
-}
-
-/* 深色模式适配 */
-body.dark-mode.sticky-note-mode .container,
-body.dark-mode.sticky-note-mode .preview {
-  background: rgba(31, 41, 55, var(--sticky-opacity, 0.85)) !important;
 }
 
 /* 透明度滑块容器 */
@@ -5421,6 +5420,52 @@ body.dark-mode .sticky-opacity-slider-container {
   border-radius: 50%;
   background: #2563eb;
   cursor: pointer;
+}
+
+/* 便签颜色选择面板 */
+.sticky-color-picker-container {
+  position: fixed;
+  top: 45px;
+  right: 180px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.dark-mode .sticky-color-picker-container {
+  background: rgba(31, 41, 55, 0.95);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.sticky-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  padding: 0;
+  background-clip: padding-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+body.dark-mode .sticky-color-swatch {
+  border-color: rgba(0, 0, 0, 0.6);
+}
+
+.sticky-color-swatch.white { background: #ffffff; }
+.sticky-color-swatch.gray { background: #e5e7eb; }
+.sticky-color-swatch.black { background: #111827; }
+.sticky-color-swatch.yellow { background: #facc15; }
+
+.sticky-color-swatch.active {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 /* 按钮容器 - 窗口顶部中央 */

@@ -60,6 +60,7 @@ import { getUiZoom, setUiZoom, applyUiZoom, zoomIn, zoomOut, zoomReset, getPrevi
 
 type Mode = 'edit' | 'preview'
 type LibSortMode = 'name_asc' | 'name_desc' | 'mtime_asc' | 'mtime_desc'
+type StickyNoteColor = 'white' | 'gray' | 'black' | 'yellow'
 
 // 最近文件最多条数
 const RECENT_MAX = 5
@@ -366,6 +367,7 @@ let stickyNoteLocked = false   // 窗口位置锁定（禁止拖动）
 let stickyNoteOnTop = false    // 窗口置顶
 let stickyTodoAutoPreview = false // 便签快速待办编辑后是否需要自动返回阅读模式
 let stickyNoteOpacity = 0.85   // 窗口透明度
+let stickyNoteColor: StickyNoteColor = 'white'  // 便签背景色
 // 边缘唤醒热区元素（非固定且隐藏时显示，鼠标靠近自动展开库）
 let _libEdgeEl: HTMLDivElement | null = null
 let _libFloatToggleEl: HTMLButtonElement | null = null
@@ -6631,6 +6633,14 @@ function getStickyOpacityIcon(): string {
   </svg>`
 }
 
+function getStickyColorIcon(): string {
+  return `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+    <rect x="3" y="3" width="8" height="8" rx="2" />
+    <rect x="13" y="3" width="8" height="8" rx="2" />
+    <rect x="8" y="13" width="8" height="8" rx="2" />
+  </svg>`
+}
+
 // 编辑图标（笔）
 function getStickyEditIcon(isEditing: boolean): string {
   if (isEditing) {
@@ -6783,19 +6793,20 @@ function toggleStickyOpacitySlider(btn: HTMLButtonElement) {
 
   const label = document.createElement('div')
   label.className = 'sticky-opacity-label'
-  label.textContent = `透明度: ${Math.round(stickyNoteOpacity * 100)}%`
+  const initialPercent = Math.round((1 - stickyNoteOpacity) * 100)
+  label.textContent = `透明度: ${initialPercent}%`
 
   const slider = document.createElement('input')
   slider.type = 'range'
   slider.className = 'sticky-opacity-slider'
-  slider.min = '30'
+  slider.min = '0'
   slider.max = '100'
-  slider.value = String(Math.round(stickyNoteOpacity * 100))
+  slider.value = String(initialPercent)
 
   slider.addEventListener('input', async (e) => {
     const value = parseInt((e.target as HTMLInputElement).value)
     label.textContent = `透明度: ${value}%`
-    await setStickyNoteOpacity(value / 100)
+    await setStickyNoteOpacity(1 - value / 100)
   })
 
   container.appendChild(label)
@@ -6806,7 +6817,7 @@ function toggleStickyOpacitySlider(btn: HTMLButtonElement) {
 
 // 设置透明度（通过 CSS 变量实现真正透明）
 async function setStickyNoteOpacity(opacity: number) {
-  stickyNoteOpacity = Math.max(0.3, Math.min(1.0, opacity))
+  stickyNoteOpacity = Math.max(0, Math.min(1, opacity))
 
   // 设置 CSS 变量，让 rgba() 背景生效
   document.documentElement.style.setProperty('--sticky-opacity', String(stickyNoteOpacity))
@@ -6816,6 +6827,73 @@ async function setStickyNoteOpacity(opacity: number) {
     await store.set('stickyNoteOpacity', stickyNoteOpacity)
     await store.save()
   }
+}
+
+// 便签颜色应用到 DOM（仅设置 CSS 变量，不做持久化）
+function applyStickyNoteColorToDom(color: StickyNoteColor) {
+  const root = document.documentElement
+  let rgb = '255, 255, 255' // 白色
+  let fg: string | null = null
+  if (color === 'gray') {
+    rgb = '229, 231, 235'         // 灰色
+  } else if (color === 'black') {
+    rgb = '15, 23, 42'            // 深色
+    fg = '#e5e7eb'                // 浅字色，增强对比度
+  } else if (color === 'yellow') {
+    rgb = '252, 211, 77'          // 便签黄
+  }
+  root.style.setProperty('--sticky-rgb', rgb)
+  if (fg) root.style.setProperty('--sticky-fg', fg)
+  else root.style.removeProperty('--sticky-fg')
+}
+
+// 设置便签背景色（含持久化）
+async function setStickyNoteColor(color: StickyNoteColor) {
+  stickyNoteColor = color
+  applyStickyNoteColorToDom(color)
+  if (store) {
+    await store.set('stickyNoteColor', color)
+    await store.save()
+  }
+}
+
+// 切换颜色选择面板
+function toggleStickyColorPicker(btn: HTMLButtonElement) {
+  const existing = document.getElementById('sticky-color-picker-container')
+  if (existing) {
+    existing.remove()
+    btn.classList.remove('active')
+    return
+  }
+
+  const container = document.createElement('div')
+  container.id = 'sticky-color-picker-container'
+  container.className = 'sticky-color-picker-container'
+
+  const colors: Array<{ key: StickyNoteColor; title: string }> = [
+    { key: 'white', title: '白色背景' },
+    { key: 'gray', title: '灰色背景' },
+    { key: 'black', title: '黑色背景' },
+    { key: 'yellow', title: '便签黄背景' }
+  ]
+
+  colors.forEach(({ key, title }) => {
+    const swatch = document.createElement('button')
+    swatch.type = 'button'
+    swatch.className = `sticky-color-swatch sticky-color-${key}` + (key === stickyNoteColor ? ' active' : '')
+    swatch.title = title
+    swatch.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const all = container.querySelectorAll('.sticky-color-swatch')
+      all.forEach((el) => el.classList.remove('active'))
+      swatch.classList.add('active')
+      void setStickyNoteColor(key)
+    })
+    container.appendChild(swatch)
+  })
+
+  document.body.appendChild(container)
+  btn.classList.add('active')
 }
 
 // 便签模式：为待办项添加推送和提醒按钮
@@ -7012,6 +7090,13 @@ function createStickyNoteControls() {
   opacityBtn.innerHTML = getStickyOpacityIcon()
   opacityBtn.addEventListener('click', () => toggleStickyOpacitySlider(opacityBtn))
 
+   // 颜色按钮
+  const colorBtn = document.createElement('button')
+  colorBtn.className = 'sticky-note-btn sticky-note-color-btn'
+  colorBtn.title = '切换背景颜色'
+  colorBtn.innerHTML = getStickyColorIcon()
+  colorBtn.addEventListener('click', () => toggleStickyColorPicker(colorBtn))
+
   // 待办按钮：在文末插入一行 "- [ ] "
   const todoBtn = document.createElement('button')
   todoBtn.className = 'sticky-note-btn'
@@ -7023,6 +7108,7 @@ function createStickyNoteControls() {
   container.appendChild(lockBtn)
   container.appendChild(topBtn)
   container.appendChild(opacityBtn)
+  container.appendChild(colorBtn)
   container.appendChild(todoBtn)
   document.body.appendChild(container)
 }
@@ -7114,13 +7200,18 @@ async function enterStickyNoteMode(filePath: string) {
   try {
     // 加载保存的透明度
     if (store) {
-      const saved = await store.get('stickyNoteOpacity') as number | null
-      if (saved !== null && saved >= 0.3 && saved <= 1.0) {
-        stickyNoteOpacity = saved
+      const savedOpacity = await store.get('stickyNoteOpacity') as number | null
+      if (savedOpacity !== null && savedOpacity >= 0 && savedOpacity <= 1.0) {
+        stickyNoteOpacity = savedOpacity
+      }
+      const savedColor = await store.get('stickyNoteColor') as string | null
+      if (savedColor === 'white' || savedColor === 'gray' || savedColor === 'black' || savedColor === 'yellow') {
+        stickyNoteColor = savedColor
       }
     }
     // 应用 CSS 变量
     document.documentElement.style.setProperty('--sticky-opacity', String(stickyNoteOpacity))
+    applyStickyNoteColorToDom(stickyNoteColor)
   } catch (e) {
     console.error('[便签模式] 加载透明度失败:', e)
   }

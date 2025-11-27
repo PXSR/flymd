@@ -325,7 +325,13 @@ export async function enableWysiwygV2(root: HTMLElement, initialMd: string, onCh
   _editor = editor
 }
 
-export async function disableWysiwygV2() {  try {
+export async function disableWysiwygV2() {
+  // 先立即隐藏根节点，避免长文本时 await 期间的视觉不一致
+  try {
+    const host = document.getElementById('md-wysiwyg-root') as HTMLElement | null
+    if (host) host.style.display = 'none'
+  } catch {}
+  try {
     if (_editor) {
       try { const mdNow = await (_editor as any).action(getMarkdown()); _lastMd = mdNow;} catch {}
     }
@@ -910,12 +916,16 @@ function enterLatexSourceEdit(hitEl: HTMLElement) {
     const ov = ensureOverlayHost()
     const hostRc = (_root as HTMLElement).getBoundingClientRect()
     const rc = mathEl.getBoundingClientRect()
+    // 获取滚动偏移量，修复编辑框定位问题
+    // 滚动发生在 _root 自身（#md-wysiwyg-root 有 overflow-y: auto）
+    const scrollTop = (_root as HTMLElement)?.scrollTop || 0
+    const scrollLeft = (_root as HTMLElement)?.scrollLeft || 0
     const wrap = document.createElement('div')
     wrap.className = 'ov-katex'
     wrap.style.position = 'absolute'
     wrap.style.pointerEvents = 'none'
-    wrap.style.left = Math.max(0, rc.left - hostRc.left) + 'px'
-    wrap.style.top = Math.max(0, rc.top - hostRc.top) + 'px'
+    wrap.style.left = Math.max(0, rc.left - hostRc.left + scrollLeft) + 'px'
+    wrap.style.top = Math.max(0, rc.top - hostRc.top + scrollTop) + 'px'
     wrap.style.width = Math.max(10, rc.width) + 'px'
     const inner = document.createElement('div')
     inner.style.pointerEvents = 'auto'

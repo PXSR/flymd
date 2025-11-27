@@ -413,9 +413,18 @@ export class TabBar {
       alert('当前标签尚未保存为文件，无法生成便签。\n请先保存到磁盘后再尝试。')
       return
     }
+    // 如果有未保存的更改，自动保存
     if (tab.dirty) {
-      alert('当前标签有未保存的更改，禁止生成便签。\n请先保存后再尝试。')
-      return
+      const saveFn = (window as any)?.flymdSaveFile as (() => Promise<void>) | undefined
+      if (typeof saveFn === 'function') {
+        try {
+          await saveFn()
+        } catch (e) {
+          console.error('[TabBar] 自动保存失败:', e)
+          alert('自动保存失败，无法生成便签。')
+          return
+        }
+      }
     }
     const flymd = (window as any)
     const createFn = flymd?.flymdCreateStickyNote as ((path: string) => Promise<void>) | undefined

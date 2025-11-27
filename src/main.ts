@@ -5385,6 +5385,9 @@ function setScrollPercent(percent: number) {
     } else {
       editor.scrollTop = p * (editor.scrollHeight - editor.clientHeight)
     }
+    // 防御性修复：确保页面本身不会被滚动（长文本时可能出现异常）
+    try { document.documentElement.scrollTop = 0 } catch {}
+    try { document.body.scrollTop = 0 } catch {}
   } catch {}
 }
 

@@ -97,3 +97,6 @@ temp.pdf
 generate_doc_pdf.py
 verify_doc_pdf.py
 plan2.md
+
+# 本地协同预览（插件 + 服务器，避免误提交）
+local-collab/

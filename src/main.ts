@@ -4926,6 +4926,9 @@ async function openFile2(preset?: unknown) {
     logDebug('openFile2.selected', { typeof: typeof selected, selected })
     logDebug('openFile2.normalizedPath', { typeof: typeof selectedPath, selectedPath })
 
+    // 记录当前是否处于所见模式，以便在打开新文档后按需恢复
+    const wasWysiwyg = !!wysiwyg
+
     // 若当前有未保存更改，且目标文件不同，则先询问是否保存
     if (dirty && selectedPath && selectedPath !== currentFilePath) {
       const doSave = await confirmNative('当前文档已修改，是否保存后再切换？', '切换文档')
@@ -4983,20 +4986,26 @@ async function openFile2(preset?: unknown) {
     dirty = false
     refreshTitle()
     refreshStatus()
-    
+
+    // 若之前处于所见模式，先关闭所见（包括 V2），避免跨文档复用同一 Milkdown 实例导致状态错乱
+    if (wasWysiwyg) {
+      try { await setWysiwygEnabled(false) } catch {}
+    }
+
     // 打开后默认进入预览模式
     await switchToPreviewAfterOpen()
 
-    // 检查是否默认启用所见模式
+    // 检查“默认所见模式”设置，并结合之前是否处于所见模式，决定是否自动重新启用
     try {
       const WYSIWYG_DEFAULT_KEY = 'flymd:wysiwyg:default'
       const wysiwygDefault = localStorage.getItem(WYSIWYG_DEFAULT_KEY) === 'true'
-      if (wysiwygDefault && !wysiwyg) {
-        // 延迟一小段时间，确保预览已渲染
+      const shouldEnableWysiwyg = wysiwygDefault || wasWysiwyg
+      if (shouldEnableWysiwyg && !wysiwyg) {
+        // 延迟一小段时间，确保预览已渲染，再切换到所见 V2
         setTimeout(async () => {
           try {
             await setWysiwygEnabled(true)
-            console.log('[WYSIWYG] 打开文档后默认启用所见模式')
+            console.log('[WYSIWYG] 打开文档后自动启用所见模式', { wysiwygDefault, wasWysiwyg })
           } catch (e) {
             console.error('[WYSIWYG] 打开文档后启用所见模式失败:', e)
           }
@@ -5248,22 +5257,14 @@ function syncToggleButton() {
 
 // 打开文件后强制切换为预览模式
 async function switchToPreviewAfterOpen() {
-  // 若所见 V2 已启用：刷新所见视图内容而不是切换到预览
-  if (wysiwygV2Active) {
-    try {
-      // 直接用现有 WYSIWYG V2 实例替换文档内容，避免频繁销毁/重建 Milkdown
-      const valueNow = String((editor as HTMLTextAreaElement).value || '')
-      await wysiwygV2ReplaceAll(valueNow)
-    } catch {}
-    try { preview.classList.add('hidden') } catch {}
+  try {
+    // 所见模式会在外部显式关闭/重新开启，这里只负责普通预览
+    if (wysiwyg) return
+    mode = 'preview'
+    try { await renderPreview() } catch (e) { try { showError('预览渲染失败', e) } catch {} }
+    try { preview.classList.remove('hidden') } catch {}
     try { syncToggleButton() } catch {}
-    return
-  }
-  if (wysiwyg) { return }
-  mode = 'preview'
-  try { await renderPreview() } catch (e) { try { showError('预览渲染失败', e) } catch {} }
-  try { preview.classList.remove('hidden') } catch {}
-  try { syncToggleButton() } catch {}
+  } catch {}
 }
 
 // 绑定事件

@@ -338,7 +338,11 @@ Not yet—`- [ ]` / `- [x]` checkboxes only work in source/preview modes for now
 ## Open Source Support
 
 Signing up through the following links helps me reduce development costs, and you also get partial credits:
-[rightcode: Highly stable and cost-effective Claude and Codex relay service](https://www.right.codes/register?aff=E8E36524)
+
+
+⭐⭐⭐[rightcode: Highly stable and cost-effective Claude and Codex relay service](https://www.right.codes/register?aff=E8E36524)
+
+
 [OhMyGPT: A high-quality AI service platform](https://x.dogenet.win/i/dXCKvZ6Q)
 **Gmail and QQ email addresses only**
 

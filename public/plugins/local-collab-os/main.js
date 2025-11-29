@@ -1,4 +1,4 @@
-// 协同编辑插件（开源服务器版）
+// 协同编辑插件
 // 说明：
 // - 功能与本地闭源协同插件保持一致：整篇同步 + 行/段落级锁 + 协同状态面板
 // - 唯一差异：不内置服务器地址，由用户在连接时填写 serverUrl
@@ -943,7 +943,7 @@ function ensurePanel(context) {
   panel.style.fontSize = '13px'
 
   const title = doc.createElement('div')
-  title.textContent = '协同编辑连接（开源服务器）'
+  title.textContent = '协同编辑连接'
   title.style.fontSize = '15px'
   title.style.fontWeight = '600'
   title.style.marginBottom = '10px'
@@ -1347,8 +1347,8 @@ export async function activate(context) {
   bindLockGuards(context)
 
   context.addMenuItem({
-    label: '协同编辑（开源服务器）',
-    title: '连接开源协同服务器（服务器地址 + 房间号 + 密码）',
+    label: '协同编辑',
+    title: '连接协同服务器（服务器地址 + 房间号 + 密码）',
     children: [
       {
         label: '连接 / 切换房间',
@@ -1381,7 +1381,7 @@ export async function activate(context) {
     ]
   })
 
-  context.ui.notice('开源协同编辑插件已激活', 'ok', 2000)
+  context.ui.notice('协同编辑插件已激活', 'ok', 2000)
 }
 
 export function deactivate() {

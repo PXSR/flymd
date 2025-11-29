@@ -352,7 +352,6 @@ FlyMD 支持通过扩展插件增强功能：
 ⭐⭐⭐[rightcode:稳定性和性价比都极高的Claude和codex中转](https://www.right.codes/register?aff=E8E36524)
 
 
-[OhMyGPT：一个优质的 AI 服务平台](https://x.dogenet.win/i/dXCKvZ6Q)
-**仅支持Gmail和QQ邮箱**
+[OhMyGPT：一个优质的 AI 服务平台](https://x.dogenet.win/i/dXCKvZ6Q) **Gmail和QQ邮箱注册获得20美元赠金**
 
 <img width="300" height="300" alt="image" src="https://github.com/user-attachments/assets/4a716fd5-dc61-4a4f-b968-91626debe8d2" />

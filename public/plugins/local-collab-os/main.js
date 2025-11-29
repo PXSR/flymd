@@ -72,8 +72,8 @@ function applyEditorCaretColor(enabled) {
       }
     } catch {}
     try {
-      // 协同模式下隐藏原生插入符，由本插件用 JS 绘制粗色条光标
-      el.style.caretColor = 'transparent'
+      // 协同模式下仍保留本地原生光标，作为兜底
+      el.style.caretColor = __COLLAB_MY_COLOR__ || el.style.caretColor || ''
     } catch {}
   } else {
     try {
@@ -82,7 +82,7 @@ function applyEditorCaretColor(enabled) {
   }
 }
 
-function updateLocalCaretVisual() {
+function collabUpdateLocalCaretVisual() {
   const editorEl = getEditorElement()
   if (!editorEl || typeof editorEl.selectionStart !== 'number') {
     hideLocalCaret()
@@ -103,7 +103,7 @@ function updateLocalCaretVisual() {
   }
 
   ensureLocalCaretMetrics(editorEl)
-  if (!__COLLAB_LOCAL_CARET_CHAR_WIDTH__ || !__COLLAB_LOCAL_CARET_LINE_HEIGHT__) {
+  if (!__COLLAB_LOCAL_CARET_LINE_HEIGHT__) {
     hideLocalCaret()
     return
   }
@@ -119,25 +119,21 @@ function updateLocalCaretVisual() {
   if (pos < 0) pos = 0
   if (pos > text.length) pos = text.length
 
+  // 计算当前所在行号（从 0 开始）
   let line = 0
-  let col = 0
   for (let i = 0; i < pos; i++) {
-    const ch = text.charCodeAt(i)
-    if (ch === 10) {
-      line++
-      col = 0
-    } else {
-      col++
-    }
+    if (text.charCodeAt(i) === 10) line++
   }
 
   let rect
   let padLeft = 0
+  let padRight = 0
   let padTop = 0
   try {
     rect = editorEl.getBoundingClientRect()
     const cs = window.getComputedStyle(editorEl)
     padLeft = parseFloat(cs.paddingLeft) || 0
+    padRight = parseFloat(cs.paddingRight) || 0
     padTop = parseFloat(cs.paddingTop) || 0
   } catch {
     hideLocalCaret()
@@ -146,26 +142,30 @@ function updateLocalCaretVisual() {
 
   const scrollY = window.scrollY || window.pageYOffset || 0
   const scrollX = window.scrollX || window.pageXOffset || 0
+  const lineH = __COLLAB_LOCAL_CARET_LINE_HEIGHT__
   const top =
     rect.top +
     scrollY +
     padTop +
-    line * __COLLAB_LOCAL_CARET_LINE_HEIGHT__ -
+    line * lineH -
     editorEl.scrollTop
-  const left =
-    rect.left +
-    scrollX +
-    padLeft +
-    col * __COLLAB_LOCAL_CARET_CHAR_WIDTH__ -
-    editorEl.scrollLeft
+
+  const left = rect.left + scrollX + padLeft
+  let width = rect.width - padLeft - padRight
+  if (!(width > 0)) width = editorEl.clientWidth || 16
 
   const caretEl = ensureLocalCaretEl()
   if (!caretEl) return
   try {
-    caretEl.style.height = __COLLAB_LOCAL_CARET_LINE_HEIGHT__ + 'px'
+    // 使用整行高度，与文字同高，弱透明作为“当前行”提示
+    const stripeH = lineH
+    const stripeTop = top
+    caretEl.style.height = stripeH + 'px'
     caretEl.style.left = left + 'px'
-    caretEl.style.top = top + 'px'
-    caretEl.style.background = __COLLAB_MY_COLOR__ || '#ff1744'
+    caretEl.style.top = stripeTop + 'px'
+    caretEl.style.width = width + 'px'
+    const base = __COLLAB_MY_COLOR__ || '#ff1744'
+    caretEl.style.background = collabColorWithAlpha(base, 0.05)
     caretEl.style.display = 'block'
   } catch {}
 }
@@ -180,10 +180,11 @@ function ensureLocalCaretEl() {
   el.style.pointerEvents = 'none'
   el.style.zIndex = '1200'
   el.style.width = '2px'
-  el.style.borderRadius = '1px'
-  el.style.background = __COLLAB_MY_COLOR__ || '#ff1744'
+  el.style.borderRadius = '0'
+  el.style.background = collabColorWithAlpha(__COLLAB_MY_COLOR__ || '#ff1744', 0.05)
   el.style.display = 'none'
-  el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.18)'
+  el.style.boxShadow = '0 0 0 0 rgba(0,0,0,0)'
+  el.style.animation = 'none'
   doc.body.appendChild(el)
   __COLLAB_LOCAL_CARET_EL__ = el
   return el
@@ -228,6 +229,27 @@ function colorFromName(name) {
     h = (h * 31 + s.charCodeAt(i)) >>> 0
   }
   return palette[h % palette.length]
+}
+
+function collabColorWithAlpha(color, alpha) {
+  try {
+    const c = String(color || '').trim()
+    if (!c || c[0] !== '#' || (c.length !== 7 && c.length !== 4)) return c
+    let r, g, b
+    if (c.length === 7) {
+      r = parseInt(c.slice(1, 3), 16)
+      g = parseInt(c.slice(3, 5), 16)
+      b = parseInt(c.slice(5, 7), 16)
+    } else {
+      r = parseInt(c[1] + c[1], 16)
+      g = parseInt(c[2] + c[2], 16)
+      b = parseInt(c[3] + c[3], 16)
+    }
+    const a = Math.max(0, Math.min(1, Number(alpha) || 0))
+    return `rgba(${r},${g},${b},${a})`
+  } catch {
+    return String(color || '')
+  }
 }
 
 function getBlockInfo(content, pos) {
@@ -586,8 +608,10 @@ function getDocMeta() {
     } catch {}
 
     let ws
+    let selfName = ''
     try {
       const name = String(displayName || '探测').trim() || '探测'
+      selfName = name
       const url =
         OFFICIAL_SERVER_URL +
         '?room=' + encodeURIComponent(OFFICIAL_ROOM_CODE) +
@@ -631,7 +655,11 @@ function getDocMeta() {
         let n = 0
         try {
           const peers = Array.isArray(msg.peers) ? msg.peers : []
-          n = peers.length >>> 0
+          const self = String(selfName || '').trim()
+          const others = self
+            ? peers.filter((x) => String(x || '').trim() && String(x || '').trim() !== self)
+            : peers.filter((x) => String(x || '').trim())
+          n = others.length >>> 0
         } catch {}
         finish(`官方服务器在线人数：${n}`)
       }
@@ -692,7 +720,7 @@ function startSyncLoop(context, cfg) {
       }
       showStatus(context, 'connected', cfg.roomCode, null, cfg.boundDocTitle)
       applyEditorCaretColor(true)
-      try { updateLocalCaretVisual() } catch {}
+      try { collabUpdateLocalCaretVisual() } catch {}
     } else if (!active && __COLLAB_DOC_ACTIVE__) {
       __COLLAB_DOC_ACTIVE__ = false
       showStatus(context, 'paused', cfg.roomCode, null, cfg.boundDocTitle)
@@ -775,7 +803,7 @@ async function startCollab(context, cfg) {
       context.ui.notice('协同连接成功', 'ok', 2000)
       __COLLAB_DOC_ACTIVE__ = true
       showStatus(context, 'connected', room, null, cfg.boundDocTitle)
-      try { updateLocalCaretVisual() } catch {}
+      try { collabUpdateLocalCaretVisual() } catch {}
     } catch (e) {
       context.ui.notice('协同初始化失败', 'err', 2500)
       showStatus(context, 'error', room, '协同初始化失败', cfg.boundDocTitle)
@@ -1263,27 +1291,27 @@ function bindLockGuards(context) {
           }
         }
         try {
-          updateLocalCaretVisual()
+          collabUpdateLocalCaretVisual()
         } catch {}
       } catch {}
   }
   editorEl.addEventListener('beforeinput', handler, true)
   try {
-    editorEl.addEventListener('keyup', () => {
-      try {
-        updateLocalCaretVisual()
-      } catch {}
-    })
-    editorEl.addEventListener('click', () => {
-      try {
-        updateLocalCaretVisual()
-      } catch {}
-    })
-    editorEl.addEventListener('scroll', () => {
-      try {
-        updateLocalCaretVisual()
-      } catch {}
-    })
+      editorEl.addEventListener('keyup', () => {
+        try {
+          collabUpdateLocalCaretVisual()
+        } catch {}
+      })
+      editorEl.addEventListener('click', () => {
+        try {
+          collabUpdateLocalCaretVisual()
+        } catch {}
+      })
+      editorEl.addEventListener('scroll', () => {
+        try {
+          collabUpdateLocalCaretVisual()
+        } catch {}
+      })
   } catch {}
 }
 
@@ -1309,7 +1337,7 @@ export async function activate(context) {
               scheduleLockAutoRelease(info.id, context)
             }
             try {
-              updateLocalCaretVisual()
+              collabUpdateLocalCaretVisual()
             } catch {}
           } catch {}
         })

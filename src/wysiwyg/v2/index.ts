@@ -647,14 +647,6 @@ function setupCodeCopyOverlay(host: HTMLElement | null) {
   scheduleCodeCopyRefresh()
 }
 
-function ensureCodeCopyId(pre: HTMLElement): string {
-  const exist = pre.getAttribute('data-code-copy-id')
-  if (exist) return exist
-  const id = 'cc-' + Math.random().toString(36).slice(2, 10)
-  pre.setAttribute('data-code-copy-id', id)
-  return id
-}
-
 function getCodeCopyText(pre: HTMLElement): string | null {
   if (!pre || !pre.isConnected) return null
   if (!pre.offsetParent) return null
@@ -715,7 +707,6 @@ function refreshCodeCopyButtonsNow() {
       const copyText = getCodeCopyText(pre)
       if (copyText == null) continue
       alive.add(pre)
-      const id = ensureCodeCopyId(pre)
       let wrap = _codeCopyWraps.get(pre)
       if (!wrap || !wrap.parentElement) {
         wrap = document.createElement('div')
@@ -727,7 +718,6 @@ function refreshCodeCopyButtonsNow() {
         btn.type = 'button'
         btn.className = 'code-copy'
         btn.textContent = '复制'
-        btn.dataset.copyTarget = id
         btn.style.pointerEvents = 'auto'
         ;(btn as any).__copyText = copyText
         wrap.appendChild(btn)
@@ -736,7 +726,6 @@ function refreshCodeCopyButtonsNow() {
       } else {
         const btn = wrap.querySelector('button.code-copy') as HTMLButtonElement | null
         if (btn) {
-          if (btn.dataset.copyTarget !== id) btn.dataset.copyTarget = id
           ;(btn as any).__copyText = copyText
         }
       }

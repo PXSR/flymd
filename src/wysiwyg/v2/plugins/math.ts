@@ -52,6 +52,7 @@ class MathInlineNodeView implements NodeView {
       katex.default.render(value, this.katexContainer, {
         throwOnError: false,
         displayMode: false,
+        strict: 'ignore',
       })
     } catch (e) {
       console.error('[Math Plugin] 渲染失败:', e)
@@ -127,6 +128,7 @@ class MathBlockNodeView implements NodeView {
       katex.default.render(value, this.katexContainer, {
         throwOnError: false,
         displayMode: true,
+        strict: 'ignore',
       })
     } catch (e) {
       console.error('[Math Plugin] 渲染失败:', e)

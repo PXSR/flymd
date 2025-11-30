@@ -477,6 +477,96 @@ async function generateTodoFilePathFromCurrent(ctx){
   return full
 }
 
+async function createTodoStickyFromContent(context, content, fileCtx){
+  let generatingNoticeId = null
+  try {
+    generatingNoticeId = showLongRunningNotice(context, '正在生成 TODO 便签...')
+    await ensureDesktopWithSticky(context)
+
+    const doc = String(content || '').trim()
+    if (!doc) {
+      context.ui.notice('内容为空，无法生成 TODO 便签', 'err', 2000)
+      return
+    }
+
+    let todosResult
+    try {
+      todosResult = await generateTodosForPlugins(context, doc)
+    } catch (err) {
+      context.ui.notice('生成待办失败：' + (err && err.message ? err.message : '未知错误'), 'err', 3000)
+      return
+    }
+    const todoText = (() => {
+      const t = todosResult && Array.isArray(todosResult.todos) && todosResult.todos.length
+        ? todosResult.todos.join('\n')
+        : String(todosResult && todosResult.raw || '').trim()
+      return t || ''
+    })()
+    if (!todoText) {
+      context.ui.notice('AI 未生成有效的待办内容', 'err', 2500)
+      return
+    }
+
+    let targetPath
+    try {
+      const ctx = fileCtx && typeof fileCtx === 'object' ? fileCtx : {}
+      targetPath = await generateTodoFilePathFromCurrent(ctx)
+    } catch (err) {
+      context.ui.notice(err && err.message ? err.message : '无法确定 TODO 文件路径', 'err', 2600)
+      return
+    }
+
+    let existingText = ''
+    try {
+      if (typeof context.invoke === 'function') {
+        try {
+          existingText = String(await context.invoke('read_text_file_any', { path: targetPath }) || '')
+        } catch (err) {
+          const msg = String((err && err.message) || err || '')
+          if (!/path not found/i.test(msg)) throw err
+          existingText = ''
+        }
+      }
+    } catch (err) {
+      context.ui.notice('读取 TODO 文件失败：' + (err && err.message ? err.message : '未知错误'), 'err', 3000)
+      return
+    }
+
+    const base = String(existingText || '').trim()
+    const finalContent = (base ? (base + '\n\n') : '') + todoText + '\n'
+
+    try {
+      if (typeof context.invoke === 'function') {
+        await context.invoke('write_text_file_any', { path: targetPath, content: finalContent })
+      } else {
+        await context.openFileByPath(targetPath)
+        context.setEditorValue(finalContent)
+      }
+    } catch (err) {
+      context.ui.notice('写入 TODO 文件失败：' + (err && err.message ? err.message : '未知错误'), 'err', 3000)
+      return
+    }
+
+    try {
+      await context.openFileByPath(targetPath)
+    } catch (err) {
+      context.ui.notice('打开 TODO 文件失败：' + (err && err.message ? err.message : '未知错误'), 'err', 2800)
+      return
+    }
+
+    context.ui.notice('TODO 内容已写入：' + targetPath, 'ok', 2200)
+
+    try {
+      await context.createStickyNote(targetPath)
+      context.ui.notice('TODO 便签已创建', 'ok', 2200)
+    } catch (err) {
+      context.ui.notice('创建便签失败：' + (err && err.message ? err.message : '未知错误'), 'err', 2800)
+    }
+  } finally {
+    hideLongRunningNotice(context, generatingNoticeId)
+  }
+}
+
 // 追加一段样式，使用独立命名空间，避免污染宿主
 function ensureCss() {
   if (DOC().getElementById('ai-assist-style')) return
@@ -894,9 +984,28 @@ function renderMsgs(root) {
         }
       })
 
+      const btnTodo = DOC().createElement('button')
+      btnTodo.className = 'msg-action-btn'
+      btnTodo.textContent = '生成便签'
+      btnTodo.title = '基于此回复生成 TODO 便签'
+      btnTodo.addEventListener('click', async () => {
+        const s = String(m.content || '').trim()
+        if (!s) return
+        if (!__AI_CONTEXT__) return
+        let fileCtx = null
+        try {
+          if (typeof window !== 'undefined' && typeof window.flymdGetCurrentFilePath === 'function') {
+            const path = window.flymdGetCurrentFilePath() || null
+            if (path) fileCtx = { filePath: path }
+          }
+        } catch {}
+        await createTodoStickyFromContent(__AI_CONTEXT__, s, fileCtx)
+      })
+
       btnGroup.appendChild(btnCopy)
       btnGroup.appendChild(btnInsert)
       btnGroup.appendChild(btnReplace)
+      btnGroup.appendChild(btnTodo)
       contentWrapper.appendChild(btnGroup)
     }
 
@@ -2795,108 +2904,28 @@ export async function activate(context) {
               {
                 label: '生成 TODO 便签',
                 onClick: async (ctx) => {
-                  let generatingNoticeId = null
+                  // 1. 取文本：选区优先，其次整篇文档
+                  let selectionInfo = null
+                  let hasSelection = false
                   try {
-                    generatingNoticeId = showLongRunningNotice(context, '正在生成 TODO 便签...')
-                    await ensureDesktopWithSticky(context)
-
-                    // 1. 取文本：选区优先，其次整篇文档
-                    let selectionInfo = null
-                    let hasSelection = false
-                    try {
-                      selectionInfo = await context.getSelection?.()
-                      if (selectionInfo && selectionInfo.text && selectionInfo.text.trim()) {
-                        hasSelection = true
-                      }
-                    } catch {}
-                    const content = hasSelection
-                      ? String(selectionInfo.text || '').trim()
-                      : String(context.getEditorValue() || '').trim()
-                    if (!content) {
-                      context.ui.notice(hasSelection ? '选中内容为空' : '文档内容为空', 'err', 2000)
-                      return
+                    selectionInfo = await context.getSelection?.()
+                    if (selectionInfo && selectionInfo.text && selectionInfo.text.trim()) {
+                      hasSelection = true
                     }
-
-                    // 2. 用 AI 生成待办（只要待办文本）
-                    let todosResult
-                    try {
-                      todosResult = await generateTodosForPlugins(context, content)
-                    } catch (e) {
-                      context.ui.notice('生成待办失败：' + (e && e.message ? e.message : '未知错误'), 'err', 3000)
-                      return
-                    }
-                    const todoText = (() => {
-                      const t = todosResult && Array.isArray(todosResult.todos) && todosResult.todos.length
-                        ? todosResult.todos.join('\n')
-                        : String(todosResult && todosResult.raw || '').trim()
-                      return t || ''
-                    })()
-                    if (!todoText) {
-                      context.ui.notice('AI 未生成有效的待办内容', 'err', 2500)
-                      return
-                    }
-
-                    // 3. 计算 TODO 文件路径
-                    let targetPath
-                    try {
-                      targetPath = await generateTodoFilePathFromCurrent(ctx || {})
-                    } catch (e) {
-                      context.ui.notice(e && e.message ? e.message : '无法确定 TODO 文件路径', 'err', 2600)
-                      return
-                    }
-
-                    // 4. 读取旧内容（如果文件已存在），然后写入“旧内容 + 待办”到磁盘
-                    let existingText = ''
-                    try {
-                      if (typeof context.invoke === 'function') {
-                        try {
-                          existingText = String(await context.invoke('read_text_file_any', { path: targetPath }) || '')
-                        } catch (e) {
-                          const msg = String((e && e.message) || e || '')
-                          if (!/path not found/i.test(msg)) throw e
-                          existingText = ''
-                        }
-                      }
-                    } catch (e) {
-                      context.ui.notice('读取 TODO 文件失败：' + (e && e.message ? e.message : '未知错误'), 'err', 3000)
-                      return
-                    }
-
-                    const base = String(existingText || '').trim()
-                    // 如果文件已存在,保留原内容并在末尾追加新的待办;否则直接写入新待办
-                    const finalContent = (base ? (base + '\n\n') : '') + todoText + '\n'
-
-                    try {
-                      if (typeof context.invoke === 'function') {
-                        await context.invoke('write_text_file_any', { path: targetPath, content: finalContent })
-                      } else {
-                        await context.openFileByPath(targetPath)
-                        context.setEditorValue(finalContent)
-                      }
-                    } catch (e) {
-                      context.ui.notice('写入 TODO 文件失败：' + (e && e.message ? e.message : '未知错误'), 'err', 3000)
-                      return
-                    }
-
-                    // 5. 打开文件并创建便签
-                    try {
-                      await context.openFileByPath(targetPath)
-                    } catch (e) {
-                      context.ui.notice('打开 TODO 文件失败：' + (e && e.message ? e.message : '未知错误'), 'err', 2800)
-                      return
-                    }
-
-                    context.ui.notice('TODO 内容已写入：' + targetPath, 'ok', 2200)
-
-                    try {
-                      await context.createStickyNote(targetPath)
-                      context.ui.notice('TODO 便签已创建', 'ok', 2200)
-                    } catch (e) {
-                      context.ui.notice('创建便签失败：' + (e && e.message ? e.message : '未知错误'), 'err', 2800)
-                    }
-                  } finally {
-                    hideLongRunningNotice(context, generatingNoticeId)
+                  } catch {}
+                  const content = hasSelection
+                    ? String(selectionInfo.text || '').trim()
+                    : String(context.getEditorValue() || '').trim()
+                  if (!content) {
+                    context.ui.notice(hasSelection ? '选中内容为空' : '文档内容为空', 'err', 2000)
+                    return
                   }
+
+                  await createTodoStickyFromContent(
+                    context,
+                    content,
+                    ctx && typeof ctx === 'object' ? ctx : null
+                  )
                 }
               }
             ]

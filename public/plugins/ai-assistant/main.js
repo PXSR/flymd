@@ -1431,14 +1431,20 @@ async function buildVisionContentBlocks(context, docCtx){
           const rawSrc = img.getAttribute('data-raw-src') || srcAttr
           const absPath = img.getAttribute('data-abs-path') || ''
           let url = ''
-          if (/^data:image\//i.test(srcAttr) || /^data:image\//i.test(rawSrc)) {
-            url = srcAttr || rawSrc
-          } else if (/^https?:\/\//i.test(srcAttr) || /^https?:\/\//i.test(rawSrc)) {
-            url = srcAttr || rawSrc
-          } else if (absPath && typeof context.readImageAsDataUrl === 'function') {
-            try {
-              url = await context.readImageAsDataUrl(absPath)
-            } catch {}
+          const isAssetUrl = /asset\.localhost/i.test(srcAttr) || /asset\.localhost/i.test(rawSrc)
+          // 1) 如果是 Tauri 的 asset.localhost 预览 URL，优先用绝对路径读取为 base64
+          if (isAssetUrl && absPath && typeof context.readImageAsDataUrl === 'function') {
+            try { url = await context.readImageAsDataUrl(absPath) } catch {}
+          }
+          // 2) 其它情况保持原有顺序
+          if (!url) {
+            if (/^data:image\//i.test(srcAttr) || /^data:image\//i.test(rawSrc)) {
+              url = srcAttr || rawSrc
+            } else if (/^https?:\/\//i.test(srcAttr) || /^https?:\/\//i.test(rawSrc)) {
+              url = srcAttr || rawSrc
+            } else if (absPath && typeof context.readImageAsDataUrl === 'function') {
+              try { url = await context.readImageAsDataUrl(absPath) } catch {}
+            }
           }
           if (!url) continue
           const alt = img.getAttribute('alt') || ''

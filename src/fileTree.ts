@@ -904,6 +904,7 @@ async function refresh() {
 
 async function init(container: HTMLElement, opts: FileTreeOptions) {
   state.container = container; state.opts = opts
+  loadFolderOrder()
   // 兜底：在整个文件树区域内允许 dragover，避免出现全局“禁止”光标
   try {
     container.addEventListener('dragover', (ev) => { ev.preventDefault() })

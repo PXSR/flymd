@@ -79,6 +79,61 @@ function setExpandedState(path: string, expanded: boolean) {
 const hasDocCache = new Map<string, boolean>()
 const hasDocPending = new Map<string, Promise<boolean>>()
 
+// 文件夹自定义排序映射：父目录 -> 子目录路径 -> 顺序索引（仅作用于文件夹）
+const folderOrder: Record<string, Record<string, number>> = {}
+const FOLDER_ORDER_KEY = 'flymd:folderOrder'
+
+function loadFolderOrder() {
+  try {
+    const raw = localStorage.getItem(FOLDER_ORDER_KEY)
+    if (!raw) return
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj !== 'object') return
+    for (const [parent, children] of Object.entries(obj as any)) {
+      if (!children || typeof children !== 'object') continue
+      const m: Record<string, number> = {}
+      for (const [child, ord] of Object.entries(children as any)) {
+        const n = Number(ord)
+        if (Number.isFinite(n)) m[child] = n
+      }
+      folderOrder[parent] = m
+    }
+  } catch {}
+}
+
+function saveFolderOrder() {
+  try {
+    localStorage.setItem(FOLDER_ORDER_KEY, JSON.stringify(folderOrder))
+  } catch {}
+}
+
+// 获取某父目录下单个子目录的手动顺序索引（未设置时返回 Infinity）
+function getFolderOrder(parent: string, child: string): number {
+  const m = folderOrder[parent]
+  if (!m) return Number.POSITIVE_INFINITY
+  const n = m[child]
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY
+}
+
+// 更新某父目录下的文件夹顺序（传入当前的子目录路径数组，按该数组顺序重建索引）
+function setFolderOrderForParent(parent: string, children: string[]) {
+  const m: Record<string, number> = {}
+  let idx = 0
+  for (const p of children) {
+    m[p] = idx++
+  }
+  folderOrder[parent] = m
+  saveFolderOrder()
+}
+
+// 清空某个父目录下的自定义排序
+export function clearFolderOrderForParent(parent: string) {
+  try {
+    if (folderOrder[parent]) delete folderOrder[parent]
+    saveFolderOrder()
+  } catch {}
+}
+
 function sep(p: string): string { return p.includes('\\') ? '\\' : '/' }
 function norm(p: string): string { return p.replace(/[\\/]+/g, sep(p)) }
 function join(a: string, b: string): string { const s = sep(a); return (a.endsWith(s) ? a : a + s) + b }
@@ -206,11 +261,23 @@ async function listDir(root: string, dir: string): Promise<{ name: string; path:
   const byMtimeAsc = (a: any, b: any) => ((a.mtime ?? 0) - (b.mtime ?? 0)) || a.name.localeCompare(b.name)
   const byMtimeDesc = (a: any, b: any) => ((b.mtime ?? 0) - (a.mtime ?? 0)) || a.name.localeCompare(b.name)
 
-  if (state.sortMode === 'name_asc') { dirs.sort(byNameAsc); items.sort(pdfGrouped(byNameAsc)) }
-  else if (state.sortMode === 'name_desc') { dirs.sort(byNameDesc); items.sort(pdfGrouped(byNameDesc)) }
-  else if (state.sortMode === 'mtime_asc') { dirs.sort(byMtimeAsc); items.sort(pdfGrouped(byMtimeAsc)) }
-  else if (state.sortMode === 'mtime_desc') { dirs.sort(byMtimeDesc); items.sort(pdfGrouped(byMtimeDesc)) }
-  else { dirs.sort(byNameAsc); items.sort(pdfGrouped(byNameAsc)) }
+  // 目录排序：手动顺序 + 原有规则
+  const dirManualFirst = (cmp: (a: any, b: any) => number) => (a: any, b: any) => {
+    const oa = getFolderOrder(dir, a.path)
+    const ob = getFolderOrder(dir, b.path)
+    const da = Number.isFinite(oa)
+    const db = Number.isFinite(ob)
+    if (da && !db) return -1
+    if (!da && db) return 1
+    if (da && db && oa !== ob) return oa - ob
+    return cmp(a, b)
+  }
+
+  if (state.sortMode === 'name_asc') { dirs.sort(dirManualFirst(byNameAsc)); items.sort(pdfGrouped(byNameAsc)) }
+  else if (state.sortMode === 'name_desc') { dirs.sort(dirManualFirst(byNameDesc)); items.sort(pdfGrouped(byNameDesc)) }
+  else if (state.sortMode === 'mtime_asc') { dirs.sort(dirManualFirst(byMtimeAsc)); items.sort(pdfGrouped(byMtimeAsc)) }
+  else if (state.sortMode === 'mtime_desc') { dirs.sort(dirManualFirst(byMtimeDesc)); items.sort(pdfGrouped(byMtimeDesc)) }
+  else { dirs.sort(dirManualFirst(byNameAsc)); items.sort(pdfGrouped(byNameAsc)) }
   return [...dirs, ...items]
 }
 
@@ -288,7 +355,13 @@ function stripExt(name: string): string {
 async function buildDir(root: string, dir: string, parent: HTMLElement) {
   parent.innerHTML = ''
   const entries = await listDir(root, dir)
-  for (const e of entries) {
+  const dirEntries = entries.filter(e => e.isDir)
+  const fileEntries = entries.filter(e => !e.isDir)
+
+  // 目录行构建时，需要知道同级目录的顺序，用于拖拽排序后重写 folderOrder
+  const allDirPaths = dirEntries.map(e => e.path)
+
+  for (const e of [...dirEntries, ...fileEntries]) {
     const row = document.createElement('div')
     row.className = 'lib-node ' + (e.isDir ? 'lib-dir' : 'lib-file')
     ;(row as any).dataset.path = e.path
@@ -320,6 +393,102 @@ async function buildDir(root: string, dir: string, parent: HTMLElement) {
         row.classList.toggle('expanded', now)
         if (now && kids.childElementCount === 0) await buildDir(root, e.path, kids)
       })
+
+      // 目录同级内部拖拽排序（仅作用于显示顺序，不移动真实文件）
+      ;(() => {
+        let down = false
+        let sx = 0, sy = 0
+        let moved = false
+        let ghost: HTMLDivElement | null = null
+        let hoverRow: HTMLElement | null = null
+
+        const onMouseMove = (ev: MouseEvent) => {
+          if (!down) return
+          const dx = ev.clientX - sx
+          const dy = ev.clientY - sy
+          if (!moved && Math.hypot(dx, dy) > 6) {
+            moved = true
+            ghost = document.createElement('div')
+            ghost.className = 'ft-ghost'
+            const gico = document.createElement('span')
+            gico.textContent = '🗂️'
+            gico.style.marginRight = '6px'
+            const glab = document.createElement('span')
+            glab.textContent = e.name
+            glab.style.fontSize = '12px'
+            ghost.appendChild(gico)
+            ghost.appendChild(glab)
+            ghost.style.position = 'fixed'
+            ghost.style.left = ev.clientX + 8 + 'px'
+            ghost.style.top = ev.clientY + 8 + 'px'
+            ghost.style.padding = '6px 10px'
+            ghost.style.background = 'rgba(17,17,17,0.85)'
+            ghost.style.color = '#fff'
+            ghost.style.borderRadius = '8px'
+            ghost.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)'
+            ghost.style.pointerEvents = 'none'
+            ghost.style.zIndex = '99999'
+            document.body.appendChild(ghost)
+            try { document.body.style.userSelect = 'none' } catch {}
+          }
+          if (moved && ghost) {
+            ghost.style.left = ev.clientX + 8 + 'px'
+            ghost.style.top = ev.clientY + 8 + 'px'
+            const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+            const rowEl = el?.closest?.('.lib-node.lib-dir') as HTMLElement | null
+            if (hoverRow && hoverRow !== rowEl) hoverRow.classList.remove('selected')
+            if (rowEl) rowEl.classList.add('selected')
+            hoverRow = rowEl
+          }
+        }
+
+        const cleanup = () => {
+          document.removeEventListener('mousemove', onMouseMove)
+          document.removeEventListener('mouseup', onMouseUp, true)
+          down = false
+          moved = false
+          if (ghost && ghost.parentElement) ghost.parentElement.removeChild(ghost)
+          ghost = null
+          if (hoverRow) hoverRow.classList.remove('selected')
+          hoverRow = null
+          try { document.body.style.userSelect = '' } catch {}
+        }
+
+        const onMouseUp = async (ev: MouseEvent) => {
+          try {
+            if (!moved) return
+            ev.preventDefault()
+            ev.stopPropagation()
+            const target = hoverRow
+            if (!target) return
+            const targetPath = (target as any).dataset?.path as string | undefined
+            if (!targetPath || targetPath === e.path) return
+            const before = allDirPaths.slice()
+            const srcIdx = before.indexOf(e.path)
+            const dstIdx = before.indexOf(targetPath)
+            if (srcIdx === -1 || dstIdx === -1) return
+            before.splice(srcIdx, 1)
+            before.splice(dstIdx, 0, e.path)
+            setFolderOrderForParent(dir, before)
+            await refresh()
+          } finally {
+            cleanup()
+          }
+        }
+
+        row.addEventListener('mousedown', (ev) => {
+          if (ev.button !== 0) return
+          // Ctrl/Shift 等组合键保留给选择，避免误启动排序拖拽
+          if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return
+          // 在目录节点上按住左键，启动排序拖拽准备
+          down = true
+          moved = false
+          sx = ev.clientX
+          sy = ev.clientY
+          document.addEventListener('mousemove', onMouseMove)
+          document.addEventListener('mouseup', onMouseUp, true)
+        }, true)
+      })()
 
       row.addEventListener('dragover', (ev) => {
         ev.preventDefault()

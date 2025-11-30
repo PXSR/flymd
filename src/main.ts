@@ -9382,7 +9382,7 @@ function bindEvents() {
     menu.appendChild(mkItem(t('ctx.rename'), doRename))
     menu.appendChild(mkItem(t('ctx.delete'), doDelete))
 
-    // 排列方式（名称/修改时间）
+    // 排列方式（名称/修改时间）和文件夹排序重置
     try {
       const sep = document.createElement('div') as HTMLDivElement
       sep.style.borderTop = '1px solid ' + (getComputedStyle(document.documentElement).getPropertyValue('--border') || '#e5e7eb')
@@ -9397,6 +9397,16 @@ function bindEvents() {
       menu.appendChild(mkItem(t('ctx.sortNameDesc'), () => { void applySort('name_desc') }))
       menu.appendChild(mkItem(t('ctx.sortTimeDesc'), () => { void applySort('mtime_desc') }))
       menu.appendChild(mkItem(t('ctx.sortTimeAsc'), () => { void applySort('mtime_asc') }))
+
+      if (isDir) {
+        menu.appendChild(mkItem('恢复当前文件夹排序', async () => {
+          try {
+            // 仅清空当前目录的手动文件夹排序，不影响文件和其他目录
+            try { (await import('./fileTree')).clearFolderOrderForParent(path) } catch {}
+            try { await fileTree.refresh() } catch {}
+          } catch {}
+        }))
+      }
     } catch {}
     menu.style.left = Math.min(ev.clientX, (window.innerWidth - 180)) + 'px'
     menu.style.top = Math.min(ev.clientY, (window.innerHeight - 120)) + 'px'

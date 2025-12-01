@@ -335,19 +335,12 @@ function escapeHtml(str) {
   }[ch] || ch))
 }
 
-// 网络请求重试机制（支持 429 限流和 5xx 服务器错误自动重试）
+// 网络请求重试机制（支持 5xx 服务器错误自动重试）
 async function fetchWithRetry(url, options, maxRetries = 3) {
   let lastError = null
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const res = await fetch(url, options)
-      // 429 限流 - 等待后重试
-      if (res.status === 429) {
-        const waitMs = Math.min(2000 * Math.pow(2, attempt), 10000)
-        console.warn(`[AI助手] 请求被限流(429)，${waitMs}ms 后重试...`)
-        await new Promise(r => setTimeout(r, waitMs))
-        continue
-      }
       // 5xx 服务器错误 - 重试
       if (res.status >= 500 && attempt < maxRetries - 1) {
         const waitMs = 1000 * (attempt + 1)
@@ -471,6 +464,62 @@ async function performAIRequest(cfg, bodyObj){
   try { data = await response.json() } catch {}
   const text = String(data?.choices?.[0]?.message?.content || '').trim()
   return { text, data }
+}
+
+// 处理免费模型调用时的错误响应（包括速率限制与每日上限）
+async function handleFreeApiError(context, res){
+  try {
+    if (!res) {
+      if (context && context.ui && typeof context.ui.notice === 'function') {
+        context.ui.notice('AI 调用失败：网络异常，请稍后重试', 'err', 4000)
+      }
+      return
+    }
+    let raw = ''
+    try { raw = await res.text() } catch {}
+    let data = null
+    if (raw) {
+      try { data = JSON.parse(raw) } catch {}
+    }
+    const status = res.status
+    const reason = data && typeof data.reason === 'string' ? data.reason : ''
+
+    // 速率限制：rpm/tpm
+    if (status === 429 && (reason === 'rpm' || reason === 'tpm')) {
+      const retry = Number(data && data.retry_after != null ? data.retry_after : 0)
+      let msg = '已超过免费速率限制，请稍后再试'
+      if (retry > 0 && Number.isFinite(retry)) {
+        msg += `（建议等待约 ${Math.ceil(retry)} 秒）`
+      }
+      if (context && context.ui && typeof context.ui.notice === 'function') {
+        context.ui.notice(msg, 'warn', 5000)
+      }
+      return
+    }
+
+    // 每日请求上限（薄荷公益）
+    if (status === 429 && reason === 'daily_request_limit') {
+      const msg = (data && data.error)
+        ? String(data.error)
+        : '今日免费调用次数已用完，请明天再试'
+      if (context && context.ui && typeof context.ui.notice === 'function') {
+        context.ui.notice(msg, 'warn', 6000)
+      }
+      return
+    }
+
+    // 其它错误：尽量展示后端返回的 error 文本
+    const baseMsg = (data && data.error)
+      ? String(data.error)
+      : (raw || ('HTTP ' + status))
+    if (context && context.ui && typeof context.ui.notice === 'function') {
+      context.ui.notice('AI 调用失败：' + baseMsg, 'err', 4000)
+    }
+  } catch (e) {
+    if (context && context.ui && typeof context.ui.notice === 'function') {
+      context.ui.notice('AI 调用失败，请稍后重试', 'err', 4000)
+    }
+  }
 }
 
 function buildTodoPrompt(content){
@@ -3260,6 +3309,12 @@ async function sendFromInputWithAction(context){
               r = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages: textOnlyMsgs, stream: false }) })
             } catch {}
           }
+        }
+        // 免费模型：如果最终仍然失败，则给出明确提示（包括速率限制等），并退出
+        if (!r || !r.ok) {
+          removeThinking()
+          await handleFreeApiError(context, r)
+          return
         }
         removeThinking()
         const text = await r.text()

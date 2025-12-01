@@ -12,6 +12,7 @@ const SES_KEY = 'ai.session.default'
 const FREE_MODEL_OPTIONS = {
   qwen: { label: 'Qwen', id: 'Qwen/Qwen3-8B' },
   qwen_omni: { label: 'Omin👁', id: 'Qwen/Qwen3-Omni-30B-A3B-Instruct', vision: true },
+  gemini: { label: 'Gemini👁', id: 'gemini-2.5-flash', vision: true },
   glm: { label: 'GLM', id: 'THUDM/glm-4-9b-chat' }
 }
 const DEFAULT_FREE_MODEL_KEY = 'qwen'
@@ -1545,8 +1546,11 @@ async function refreshHeader(context){
     const modelInput = el('ai-model')
     const modelPowered = el('ai-model-powered')
     const modelPoweredImg = el('ai-model-powered-img')
+    const modelPoweredText = el('ai-model-powered-text')
     const freeModelLabel = el('ai-free-model-label')
     const freeModelSelect = el('ai-free-model')
+    const freeKey = normalizeFreeModelKey(cfg.freeModel)
+    const isGemini = isFree && freeKey === 'gemini'
     if (modelLabel) modelLabel.style.display = isFree ? 'none' : ''
     if (modelInput) modelInput.style.display = isFree ? 'none' : ''
     if (freeModelLabel) freeModelLabel.style.display = isFree ? 'inline-block' : 'none'
@@ -1554,7 +1558,7 @@ async function refreshHeader(context){
       freeModelSelect.style.display = isFree ? 'inline-block' : 'none'
       if (isFree) freeModelSelect.value = normalizeFreeModelKey(cfg.freeModel)
     }
-    if (modelPowered && modelPoweredImg) {
+    if (modelPowered) {
       modelPowered.style.display = isFree ? 'inline-block' : 'none'
       if (isFree) {
         const mainWin = el('ai-assist-win')
@@ -1570,7 +1574,26 @@ async function refreshHeader(context){
             isDark = !!(WIN().matchMedia && WIN().matchMedia('(prefers-color-scheme: dark)').matches)
           }
         }
-      modelPoweredImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
+        if (isGemini) {
+          modelPowered.href = 'https://x666.me/register?aff=yUSz'
+          if (modelPoweredText) {
+            modelPoweredText.textContent = '薄荷公益'
+            modelPoweredText.style.display = 'inline-block'
+          }
+          if (modelPoweredImg) {
+            modelPoweredImg.style.display = 'none'
+          }
+        } else {
+          modelPowered.href = 'https://cloud.siliconflow.cn/i/X96CT74a'
+          if (modelPoweredText) {
+            modelPoweredText.textContent = ''
+            modelPoweredText.style.display = 'none'
+          }
+          if (modelPoweredImg) {
+            modelPoweredImg.style.display = 'inline-block'
+            modelPoweredImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
+          }
+        }
       }
     }
   } catch {}
@@ -2048,12 +2071,15 @@ async function mountWindow(context){
     '    <span class="mode-label" id="mode-label-free-toolbar">免费</span>',
     '   </div>',
     '   <label id="ai-free-model-label" style="display:none;font-size:12px;color:#6b7280;white-space:nowrap;margin-left:6px;">模型</label>',
-    '   <select id="ai-free-model" title="选择免费模型" style="display:none;width:80px;border-radius:6px;padding:4px 6px;font-size:12px;"><option value="qwen">Qwen</option><option value="qwen_omni">Omin👁</option><option value="glm">GLM</option></select>',
+    '   <select id="ai-free-model" title="选择免费模型" style="display:none;width:80px;border-radius:6px;padding:4px 6px;font-size:12px;"><option value="qwen">Qwen</option><option value="qwen_omni">Omin👁</option><option value="gemini">Gemini👁</option><option value="glm">GLM</option></select>',
     '   <div id="ai-selects">',
     '    <label id="ai-model-label" style="font-size:12px;">模型</label>',
     '    <input id="ai-model" placeholder="如 gpt-4o-mini" style="width:120px;font-size:12px;padding:4px 6px;"/>',
     '   </div>',
-    '   <a id="ai-model-powered" href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="display:none;border:none;outline:none;margin-left:auto;"><img id="ai-model-powered-img" src="" alt="Powered by" style="height:22px;width:auto;border:none;outline:none;vertical-align:middle;"/></a>',
+    '   <a id="ai-model-powered" href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="display:none;border:none;outline:none;margin-left:auto;white-space:nowrap;">',
+    '    <span id="ai-model-powered-text" style="display:none;font-size:12px;color:#6b7280;margin-right:6px;"></span>',
+    '    <img id="ai-model-powered-img" src="" alt="Powered by" style="height:22px;width:auto;border:none;outline:none;vertical-align:middle;"/>',
+    '   </a>',
     '  </div>',
     ' </div>',
     ' <div id="ai-chat"></div>',
@@ -2196,9 +2222,14 @@ async function mountWindow(context){
       visionBtn.addEventListener('click', async () => {
         try {
           const cfg = await loadCfg(context)
-          const isFree = isFreeProvider(cfg)
-          if (isFree) {
-            try { context.ui.notice('当前免费模型暂不支持视觉能力', 'warn', 2000) } catch {}
+          let supported = true
+          if (isFreeProvider(cfg)) {
+            const key = normalizeFreeModelKey(cfg.freeModel)
+            const info = FREE_MODEL_OPTIONS[key]
+            supported = !!(info && info.vision)
+          }
+          if (!supported) {
+            try { context.ui.notice('当前模型暂不支持视觉能力', 'warn', 2000) } catch {}
             return
           }
           cfg.visionEnabled = !cfg.visionEnabled
@@ -3785,13 +3816,8 @@ async function applyWinTheme(context, rootEl){
     // 更新更多菜单中的主题文本
     const menuTheme = rootEl.querySelector('#ai-menu-theme')
     if (menuTheme) menuTheme.textContent = isDark ? '日间模式' : '夜间模式'
-    // 更新工具栏中免费模式的图片
-    if (isFreeProvider(cfg)) {
-      const modelPoweredImg = el('ai-model-powered-img')
-      if (modelPoweredImg) {
-        modelPoweredImg.src = resolvePluginAsset(isDark ? 'Powered-by-dark.png' : 'Powered-by-light.png')
-      }
-    }
+    // 主题变化时刷新头部展示（包含免费模型徽标/薄荷公益文案）
+    try { await refreshHeader(context) } catch {}
     if (!__AI_MQ_BOUND__){
       try {
         // 监听主应用的夜间模式切换事件（始终监听）

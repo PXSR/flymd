@@ -1103,7 +1103,11 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
   border-right: 1px solid var(--border);
 }
 .lib-outline.outline-floating.side-left {
-  left: var(--gap-left-library, 0px);
+  /* 默认贴容器左侧；若库固定在左侧，则在库宽度之后紧贴显示 */
+  left: 0;
+}
+.container.with-library-left .lib-outline.outline-floating.side-left {
+  left: 280px; /* 与 .library 宽度保持一致，消除中间空隙 */
 }
 .lib-outline.outline-floating.side-right {
   right: var(--gap-right-library, 0px);

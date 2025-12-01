@@ -2,6 +2,15 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.5.5
+- Added: AI vision capabilities that let the assistant directly read local images and call vision models for understanding and analysis, including a time-limited free vision model to make it easier to try.
+- Added: New window layout APIs for the extension system, enabling a three-column layout ("library sidebar + AI panel on the left + editor") and dynamic plugin positioning so right-docked and bottom-docked plugin panes avoid overlapping each other.
+- Added: Exposed a YAML Front Matter and parsed metadata API so plugins can read the document front matter in a unified way, useful for blog publishing, library enhancements, and external app sync.
+- Added: Published the third-party "Telegraph-Image" image hosting plugin in the extension marketplace so you can upload images to Telegraph in one click and get back shareable links.
+- Improved: Layout behavior of AI plugin windows and bottom plugin panes in WYSIWYG mode so they no longer cover the tab bar and correctly push the editor area instead of overlapping it.
+- Improved: Error handling around local and hosted images with size/limit prompts and fallback strategies, and fixed cases where images in dialogs or source mode could not be recognized by the AI.
+- Fixed: Library sidebar drag-and-drop sorting now persists correctly, and several CORS-related issues and other edge cases have been resolved for a more stable overall experience.
+
 ## Update v0.5.4
 - Added: AI chat can now link with Sticky Notes so you can quickly turn replies into notes or todos and keep ideas from getting lost.
 - Improved: Default Sticky Note spawn position so new notes appear closer to the current document and area of focus, reducing manual dragging.

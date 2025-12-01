@@ -10603,6 +10603,15 @@ function bindEvents() {
     console.log('flyMD (飞速MarkDown) 应用启动...')
     try { logInfo('打点:JS启动') } catch {}
 
+    // Linux 平台：设置不透明背景，修复 WebKitGTK/AppImage 透明窗口问题
+    if (navigator.platform.toLowerCase().includes('linux')) {
+      try {
+        await getCurrentWindow().setBackgroundColor('#ffffff')
+      } catch {
+        document.body.style.background = '#ffffff'
+      }
+    }
+
     // 尝试初始化存储（确保完成后再加载扩展，避免读取不到已安装列表）
     await initStore()
     try {

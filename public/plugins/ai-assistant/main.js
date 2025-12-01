@@ -1376,6 +1376,20 @@ async function refreshHeader(context){
       }
     }
   } catch {}
+  // Omin 视觉模型：若当前已选择且尚未提示过，则在会话中发送一次提示
+  try {
+    if (isFreeProvider(cfg) && !cfg.qwenOmniHintShown && normalizeFreeModelKey(cfg.freeModel) === 'qwen_omni') {
+      await ensureSessionForDoc(context)
+      const tip = '当前使用的是 Omin 视觉模型：免费体验但每日有用量和速率限制，请按需使用。'
+      pushMsg('assistant', tip)
+      __AI_LAST_REPLY__ = tip
+      const chat = el('ai-chat')
+      if (chat) renderMsgs(chat)
+      try { await syncCurrentSessionToDB(context) } catch {}
+      cfg.qwenOmniHintShown = true
+      await saveCfg(context, cfg)
+    }
+  } catch {}
   // 更新工具栏模式切换开关
   try {
     const isFree = isFreeProvider(cfg)
@@ -1554,6 +1568,61 @@ async function buildVisionContentBlocks(context, docCtx){
     }
   } catch {}
   return blocks
+}
+
+// 将消息中的 HTTP 图片 URL 尝试转换为 base64 DataURL，以便在远端无法拉取外链图片时退回本地拉取
+async function fetchImageAsDataUrlForVision(url){
+  try {
+    if (!url || typeof url !== 'string') return ''
+    const res = await fetch(url)
+    if (!res.ok) return ''
+    const blob = await res.blob()
+    return await new Promise((resolve) => {
+      try {
+        const reader = new FileReader()
+        reader.onerror = () => resolve('')
+        reader.onload = () => {
+          try {
+            resolve(String(reader.result || ''))
+          } catch {
+            resolve('')
+          }
+        }
+        reader.readAsDataURL(blob)
+      } catch {
+        resolve('')
+      }
+    })
+  } catch {
+    return ''
+  }
+}
+
+async function convertHttpImageUrlsToDataUrl(messages){
+  if (!Array.isArray(messages) || !messages.length) return null
+  let cloned
+  try {
+    cloned = JSON.parse(JSON.stringify(messages))
+  } catch {
+    return null
+  }
+  let converted = 0
+  for (const msg of cloned) {
+    if (!msg || !Array.isArray(msg.content)) continue
+    for (const part of msg.content) {
+      if (!part || part.type !== 'image_url') continue
+      const obj = part.image_url || part.imageUrl
+      if (!obj || typeof obj.url !== 'string') continue
+      const raw = obj.url.trim()
+      if (!/^https?:\/\//i.test(raw)) continue
+      const dataUrl = await fetchImageAsDataUrlForVision(raw)
+      if (dataUrl) {
+        obj.url = dataUrl
+        converted++
+      }
+    }
+  }
+  return converted > 0 ? cloned : null
 }
 
 async function refreshSessionSelect(context) {
@@ -1858,19 +1927,6 @@ async function mountWindow(context){
       const info = FREE_MODEL_OPTIONS[nextKey]
       if (info && info.vision) {
         cfg.visionEnabled = true
-        // 首次切换到 Omin 视觉模型时，在对话框中发送一次提示文案
-        if (!cfg.qwenOmniHintShown && nextKey === 'qwen_omni') {
-          try {
-            await ensureSessionForDoc(context)
-            const tip = '当前使用的是 Omin 视觉模型：免费体验但每日有用量和速率限制，请按需使用。'
-            pushMsg('assistant', tip)
-            __AI_LAST_REPLY__ = tip
-            const chat = el('ai-chat')
-            if (chat) renderMsgs(chat)
-            try { await syncCurrentSessionToDB(context) } catch {}
-          } catch {}
-          cfg.qwenOmniHintShown = true
-        }
       }
       await saveCfg(context, cfg)
       await refreshHeader(context)
@@ -2870,12 +2926,22 @@ async function sendFromInputWithAction(context){
       if (isFree) {
         // 免费代理模式：直接走非流式一次性请求，由后端持有真实 Key
         let r = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages: finalMsgs, stream: false }) })
-        // 如果带图请求被 4xx 拒绝且启用了视觉，则自动降级为纯文本请求
+        // 如果带图请求被 4xx 拒绝且启用了视觉，则优先尝试将 HTTP 图片 URL 转为 base64 再重试，失败后再降级为纯文本
         if (usedVision && r && !r.ok && r.status >= 400 && r.status < 500) {
+          let retriedWithBase64 = false
           try {
-            downgradedFromVision = true
-            r = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages: textOnlyMsgs, stream: false }) })
+            const base64Msgs = await convertHttpImageUrlsToDataUrl(finalMsgs)
+            if (base64Msgs) {
+              retriedWithBase64 = true
+              r = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages: base64Msgs, stream: false }) })
+            }
           } catch {}
+          if (!retriedWithBase64 || (r && !r.ok && r.status >= 400 && r.status < 500)) {
+            try {
+              downgradedFromVision = true
+              r = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages: textOnlyMsgs, stream: false }) })
+            } catch {}
+          }
         }
         removeThinking()
         const text = await r.text()

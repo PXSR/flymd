@@ -71,16 +71,6 @@ export class TabBar {
     this.tabsContainer.className = 'tabbar-tabs'
     this.container.appendChild(this.tabsContainer)
 
-    // 新建按钮
-    const newTabBtn = document.createElement('div')
-    newTabBtn.className = 'tabbar-new-btn'
-    newTabBtn.title = '新建标签 (Ctrl+T)'
-    newTabBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>'
-    newTabBtn.addEventListener('click', () => {
-      this.tabManager.createNewTab()
-    })
-    this.container.appendChild(newTabBtn)
-
     // 渲染所有标签
     this.renderTabs()
   }
@@ -99,6 +89,16 @@ export class TabBar {
       const tabEl = this.createTabElement(tab, tab.id === activeTabId)
       this.tabsContainer.appendChild(tabEl)
     }
+
+    // 新建按钮作为最后一个“标签”
+    const newTabBtn = document.createElement('div')
+    newTabBtn.className = 'tabbar-new-btn'
+    newTabBtn.title = '新建标签 (Ctrl+T)'
+    newTabBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>'
+    newTabBtn.addEventListener('click', () => {
+      this.tabManager.createNewTab()
+    })
+    this.tabsContainer.appendChild(newTabBtn)
   }
 
   /**

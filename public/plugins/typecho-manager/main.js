@@ -2263,7 +2263,22 @@ async function publishCurrentDocument(context) {
   }
   const cid = meta.typechoId || meta.cid || meta.id
 
-  let title = String(meta.title || '').trim() || '(未命名)'
+  // 获取标题：优先使用 meta.title，否则从文件名提取
+  let title = String(meta.title || '').trim()
+  if (!title) {
+    try {
+      const fn = typeof window !== 'undefined' ? window.flymdGetCurrentFilePath : null
+      if (fn && typeof fn === 'function') {
+        const filePath = fn()
+        if (filePath && typeof filePath === 'string') {
+          // 从文件路径中提取文件名（不含扩展名）
+          const fileName = filePath.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '')
+          if (fileName) title = fileName
+        }
+      }
+    } catch {}
+  }
+  if (!title) title = '(未命名)'
   const excerpt = String(meta.excerpt || '').trim()
   let cats = Array.isArray(meta.categories) ? meta.categories : []
   const tagArr = Array.isArray(meta.tags)

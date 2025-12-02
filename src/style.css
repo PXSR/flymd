@@ -3627,6 +3627,71 @@ html, body { overflow: hidden; }
   border: 1px solid #3c3c3c;
 }
 
+/* 所见模式代码块语法高亮（VS Code 暗色主题颜色，默认适配深色背景） */
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer {
+  color: #d4d4d4;
+  padding: inherit;
+}
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-keyword,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-selector-tag,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-built_in { color: #569cd6; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-section,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-function,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title\.function_ { color: #dcdcaa; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-string,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-attr,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-template-variable { color: #ce9178; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-number,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-literal { color: #b5cea8; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-comment,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-quote { color: #6a9955; font-style: italic; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-variable,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-params { color: #9cdcfe; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-class,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-type { color: #4ec9b0; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-property { color: #9cdcfe; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-operator { color: #d4d4d4; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-punctuation { color: #d4d4d4; }
+
+/* 暗色模式下：确保所见模式代码块高亮正常显示 */
+@media (prefers-color-scheme: dark) {
+  /* 强制深色代码块背景，覆盖主题样式 */
+  .container.wysiwyg-v2 .ProseMirror pre {
+    background: #1e1e1e !important;
+    border-color: #3c3c3c !important;
+  }
+  .container.wysiwyg-v2 .ProseMirror pre code {
+    color: #d4d4d4 !important;
+    background: transparent !important;
+  }
+  /* 确保高亮层在暗色模式下可见 */
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer {
+    color: #d4d4d4 !important;
+  }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-keyword,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-selector-tag,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-built_in { color: #569cd6 !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-section,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-function,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title\.function_ { color: #dcdcaa !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-string,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-attr,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-template-variable { color: #ce9178 !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-number,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-literal { color: #b5cea8 !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-comment,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-quote { color: #6a9955 !important; font-style: italic; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-variable,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-params { color: #9cdcfe !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-class,
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-type { color: #4ec9b0 !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-property { color: #9cdcfe !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-operator { color: #d4d4d4 !important; }
+  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-punctuation { color: #d4d4d4 !important; }
+}
+
 /* 所见模式复制按钮：适配深色代码块背景 */
 .container.wysiwyg-v2 #md-wysiwyg-root .overlay-host .ov-codecopy .code-copy {
   background: rgba(255, 255, 255, 0.1);

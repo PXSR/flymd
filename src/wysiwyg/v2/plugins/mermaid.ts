@@ -1,8 +1,10 @@
 // Milkdown Mermaid 插件：将 mermaid 代码块渲染为图表
+// 同时为其他代码块提供语法高亮支持
 import { $view } from '@milkdown/utils'
 import { codeBlockSchema } from '@milkdown/preset-commonmark'
 import type { Node } from '@milkdown/prose/model'
 import type { EditorView, NodeView } from '@milkdown/prose/view'
+import { HighlightCodeBlockNodeView } from './highlight'
 
 // Mermaid 渲染函数
 async function renderMermaid(container: HTMLElement, code: string) {
@@ -273,7 +275,7 @@ export const mermaidPlugin = $view(codeBlockSchema.node, () => {
       return new MermaidNodeView(node, view, getPos as () => number | undefined)
     }
 
-    // 其他代码块返回 undefined，使用默认渲染
-    return undefined
+    // 其他代码块使用高亮 NodeView
+    return new HighlightCodeBlockNodeView(node, view, getPos as () => number | undefined)
   }
 })

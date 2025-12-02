@@ -11,7 +11,9 @@ function createDefaultSettings() {
     blogId: '0',
     baseUrl: '',
     defaultDownloadDir: '',
-    alwaysUseDefaultDir: false
+    alwaysUseDefaultDir: false,
+    savedViews: [],
+    backups: {}
   }
 }
 
@@ -276,6 +278,9 @@ let prevPageBtn = null
 let nextPageBtn = null
 let relatedOverlayEl = null
 let statsOverlayEl = null
+let headSelectAllCheckbox = null
+let rollbackOverlayEl = null
+let rowContextMenuEl = null
 
 // 设置窗口 DOM 引用
 let settingsOverlayEl = null
@@ -285,7 +290,7 @@ function ensureStyle() {
   const css = [
     '.tm-typecho-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:90000;}',
     '.tm-typecho-overlay.hidden{display:none;}',
-    '.tm-typecho-dialog{width:820px;max-width:calc(100% - 40px);max-height:80vh;background:var(--bg);color:var(--fg);border-radius:10px;border:1px solid var(--border);box-shadow:0 14px 36px rgba(0,0,0,.35);display:flex;flex-direction:column;font-size:13px;overflow:hidden;}',
+    '.tm-typecho-dialog{width:1040px;max-width:calc(100% - 40px);max-height:80vh;background:var(--bg);color:var(--fg);border-radius:10px;border:1px solid var(--border);box-shadow:0 14px 36px rgba(0,0,0,.35);display:flex;flex-direction:column;font-size:13px;overflow:hidden;}',
     '.tm-typecho-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;}',
     '.tm-typecho-header-left{display:flex;align-items:center;gap:8px;}',
     '.tm-typecho-badge{font-size:11px;padding:2px 6px;border-radius:999px;background:rgba(37,99,235,.1);color:#2563eb;border:1px solid rgba(37,99,235,.4);}',
@@ -304,11 +309,11 @@ function ensureStyle() {
     '.tm-typecho-input,.tm-typecho-select{border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--fg);padding:3px 9px;font-size:12px;}',
     '.tm-typecho-input-date{max-width:140px;}',
     '.tm-typecho-main{flex:1;min-height:0;margin-top:4px;border-radius:8px;border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;background:rgba(127,127,127,.02);}',
-    '.tm-typecho-table-head{display:grid;grid-template-columns:2.5fr 1.4fr 1.2fr 0.9fr 0.9fr;border-bottom:1px solid var(--border);background:rgba(127,127,127,.06);}',
+    '.tm-typecho-table-head{display:grid;grid-template-columns:2.5fr 1.4fr 1.2fr 0.9fr 1.2fr;border-bottom:1px solid var(--border);background:rgba(127,127,127,.06);}',
     '.tm-typecho-th,.tm-typecho-td{padding:6px 8px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
     '.tm-typecho-th{font-weight:600;color:var(--muted);}',
     '.tm-typecho-table-body{flex:1;min-height:0;overflow:auto;}',
-    '.tm-typecho-row{display:grid;grid-template-columns:2.5fr 1.4fr 1.2fr 0.9fr 0.9fr;border-top:1px solid rgba(127,127,127,.12);}',
+    '.tm-typecho-row{display:grid;grid-template-columns:2.5fr 1.4fr 1.2fr 0.9fr 1.2fr;border-top:1px solid rgba(127,127,127,.12);}',
     '.tm-typecho-row:nth-child(odd){background:rgba(127,127,127,.02);}',
     '.tm-typecho-row:hover{background:rgba(37,99,235,.06);}',
     '.tm-typecho-title{cursor:pointer;}',
@@ -330,7 +335,11 @@ function ensureStyle() {
     '.tm-typecho-settings-row{display:grid;grid-template-columns:110px 1fr;gap:6px;align-items:center;}',
     '.tm-typecho-settings-label{font-size:12px;color:var(--muted);}',
     '.tm-typecho-settings-input{border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--fg);padding:5px 8px;font-size:12px;}',
-    '.tm-typecho-settings-footer{padding:8px 14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}'
+    '.tm-typecho-settings-footer{padding:8px 14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}',
+    '.tm-typecho-row-menu{position:fixed;z-index:90020;min-width:150px;background:var(--bg);color:var(--fg);border-radius:8px;border:1px solid var(--border);box-shadow:0 14px 36px rgba(0,0,0,.35);font-size:12px;padding:4px 0;}',
+    '.tm-typecho-row-menu-item{padding:6px 12px;cursor:pointer;white-space:nowrap;}',
+    '.tm-typecho-row-menu-item:hover{background:rgba(127,127,127,.10);}',
+    '.tm-typecho-row-menu-sep{margin:4px 0;border-top:1px solid var(--border);}'
   ].join('\n')
   const style = document.createElement('style')
   style.id = 'tm-typecho-style'
@@ -536,10 +545,33 @@ function buildManagerDialog() {
 
   const head = document.createElement('div')
   head.className = 'tm-typecho-table-head'
-  ;['标题', '分类', '发布时间', '状态', '操作'].forEach((t) => {
+  ;['标题', '分类', '发布时间', '状态', '操作'].forEach((t, idx) => {
     const th = document.createElement('div')
     th.className = 'tm-typecho-th'
-    th.textContent = t
+    if (idx === 0) {
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.style.marginRight = '6px'
+      cb.addEventListener('change', () => {
+        if (!sessionState.selectedIds) sessionState.selectedIds = new Set()
+        const pageItems = sessionState.lastPageItems || []
+        for (const p of pageItems) {
+          const cid = p.postid || p.postId || p.cid || p.id
+          if (!cid && cid !== 0) continue
+          const key = String(cid)
+          if (cb.checked) sessionState.selectedIds.add(key)
+          else sessionState.selectedIds.delete(key)
+        }
+        void renderPostTable()
+      })
+      headSelectAllCheckbox = cb
+      th.appendChild(cb)
+      const span = document.createElement('span')
+      span.textContent = t
+      th.appendChild(span)
+    } else {
+      th.textContent = t
+    }
     head.appendChild(th)
   })
   main.appendChild(head)
@@ -768,6 +800,58 @@ function getSelectedPosts() {
     if (ids.has(String(cid))) result.push(p)
   }
   return result
+}
+
+function closeRowContextMenu() {
+  if (rowContextMenuEl) {
+    try { rowContextMenuEl.parentNode && rowContextMenuEl.parentNode.removeChild(rowContextMenuEl) } catch {}
+    rowContextMenuEl = null
+  }
+}
+
+async function openRowContextMenu(context, post, x, y) {
+  if (!context || !post) return
+  ensureStyle()
+  closeRowContextMenu()
+
+  const menu = document.createElement('div')
+  menu.className = 'tm-typecho-row-menu'
+  menu.style.left = Math.max(0, x - 4) + 'px'
+  menu.style.top = Math.max(0, y - 4) + 'px'
+
+  const addItem = (label, fn) => {
+    const item = document.createElement('div')
+    item.className = 'tm-typecho-row-menu-item'
+    item.textContent = label
+    item.addEventListener('click', () => {
+      closeRowContextMenu()
+      try { fn && fn() } catch {}
+    })
+    menu.appendChild(item)
+  }
+
+  addItem('下载到本地', () => { void downloadSinglePost(context, post) })
+  addItem('用当前文档更新', () => { void publishCurrentForPost(context, post) })
+  const sep = document.createElement('div')
+  sep.className = 'tm-typecho-row-menu-sep'
+  menu.appendChild(sep)
+  addItem('回滚到备份版本', () => { void openRollbackDialog(context, post) })
+
+  document.body.appendChild(menu)
+  rowContextMenuEl = menu
+
+  const handler = (e) => {
+    try {
+      if (menu && !menu.contains(e.target)) {
+        closeRowContextMenu()
+      }
+    } catch {
+      closeRowContextMenu()
+    }
+  }
+  setTimeout(() => {
+    document.addEventListener('mousedown', handler, { once: true, capture: true })
+  }, 0)
 }
 
 // 拉取与渲染文章列表（逻辑部分）
@@ -1149,6 +1233,208 @@ async function batchDownloadSelected(context) {
   }
 }
 
+async function openRollbackDialog(context, post) {
+  if (!context) return
+  ensureStyle()
+  const cid = post.postid || post.postId || post.cid || post.id
+  const cidStr = String(cid || '')
+  if (!cidStr) {
+    try { context.ui.notice('该文章缺少 ID，无法回滚', 'err', 2200) } catch {}
+    return
+  }
+  const s = sessionState.settings || await loadSettings(context)
+  const backupsRoot = s.backups && typeof s.backups === 'object' ? s.backups : {}
+  const list = Array.isArray(backupsRoot[cidStr]) ? backupsRoot[cidStr] : []
+  if (!list.length) {
+    try { context.ui.notice('当前文章尚无可用回滚版本', 'err', 2400) } catch {}
+    return
+  }
+  if (rollbackOverlayEl) {
+    try { rollbackOverlayEl.parentNode && rollbackOverlayEl.parentNode.removeChild(rollbackOverlayEl) } catch {}
+    rollbackOverlayEl = null
+  }
+  const overlay = document.createElement('div')
+  overlay.className = 'tm-typecho-settings-overlay'
+
+  const dlg = document.createElement('div')
+  dlg.className = 'tm-typecho-settings-dialog'
+  overlay.appendChild(dlg)
+
+  const header = document.createElement('div')
+  header.className = 'tm-typecho-settings-header'
+  header.textContent = `回滚 Typecho 文章（ID=${cidStr}）`
+  dlg.appendChild(header)
+
+  const body = document.createElement('div')
+  body.className = 'tm-typecho-settings-body'
+  dlg.appendChild(body)
+
+  const info = document.createElement('div')
+  info.style.fontSize = '11px'
+  info.style.color = 'var(--muted)'
+  info.style.marginBottom = '6px'
+  info.textContent = '以下为最近保存的远端版本快照，选择一个版本可将远端文章回滚到当时的内容（不会自动修改本地文档）。'
+  body.appendChild(info)
+
+  const listEl = document.createElement('div')
+  listEl.style.maxHeight = '320px'
+  listEl.style.overflow = 'auto'
+
+  const doRollback = async (bk) => {
+    try {
+      const postStruct = bk && bk.post ? bk.post : null
+      if (!postStruct || typeof postStruct !== 'object') {
+        context.ui.notice('备份数据不完整，无法回滚', 'err', 2400)
+        return
+      }
+      const status = String(postStruct.post_status || postStruct.postStatus || postStruct.status || '').toLowerCase()
+      const draft = (status === 'draft')
+      const ok = await context.ui.confirm(
+        `确定将远端文章 ID=${cidStr} 回滚到备份时间 ${bk.ts} 的版本吗？\n\n` +
+        `该操作仅影响远端文章，不会修改当前本地文档。`
+      )
+      if (!ok) return
+      await xmlRpcCall(context, s, 'metaWeblog.editPost', [
+        cidStr,
+        s.username,
+        s.password,
+        postStruct,
+        !draft
+      ])
+      context.ui.notice('远端文章已回滚到所选备份版本', 'ok', 2600)
+      try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
+      rollbackOverlayEl = null
+    } catch (e) {
+      console.error('[Typecho Manager] 回滚失败', e)
+      const msg = e && e.message ? String(e.message) : String(e || '未知错误')
+      try { context.ui.notice('回滚失败：' + msg, 'err', 3200) } catch {}
+    }
+  }
+
+  list.slice().reverse().forEach((bk, idx) => {
+    const row = document.createElement('div')
+    row.style.display = 'flex'
+    row.style.justifyContent = 'space-between'
+    row.style.alignItems = 'center'
+    row.style.padding = '6px 4px'
+    row.style.borderBottom = '1px solid var(--border)'
+
+    const left = document.createElement('div')
+    left.style.display = 'flex'
+    left.style.flexDirection = 'column'
+    const tsSpan = document.createElement('span')
+    tsSpan.style.fontSize = '12px'
+    tsSpan.textContent = bk.ts || '(未知时间)'
+    left.appendChild(tsSpan)
+    const statusSpan = document.createElement('span')
+    statusSpan.style.fontSize = '11px'
+    statusSpan.style.color = 'var(--muted)'
+    const status = String(bk.post?.post_status || bk.post?.postStatus || bk.post?.status || '').toLowerCase()
+    statusSpan.textContent = '状态：' + (status || '未知')
+    left.appendChild(statusSpan)
+
+    // 备份版本与当前列表项的简单对比（标题 / 分类 / 标签）
+    try {
+      const curTitle = String(post.title || '').trim()
+      const bkTitle = String(bk.post?.title || '').trim()
+      if (curTitle || bkTitle) {
+        const tSpan = document.createElement('span')
+        tSpan.style.fontSize = '11px'
+        tSpan.style.color = 'var(--muted)'
+        if (curTitle && bkTitle && curTitle !== bkTitle) {
+          tSpan.textContent = `标题变化：当前="${curTitle}"，备份="${bkTitle}"`
+        } else {
+          tSpan.textContent = '标题：' + (bkTitle || curTitle || '(无)')
+        }
+        left.appendChild(tSpan)
+      }
+      const getCats = (p) => {
+        const pc = p.categories || p.category || []
+        const arr = Array.isArray(pc) ? pc : (pc ? [pc] : [])
+        return arr.map((x) => String(x || '').trim()).filter(Boolean)
+      }
+      const curCats = getCats(post)
+      const bkCats = getCats(bk.post || {})
+      if (curCats.length || bkCats.length) {
+        const cSpan = document.createElement('span')
+        cSpan.style.fontSize = '11px'
+        cSpan.style.color = 'var(--muted)'
+        const curStr = curCats.join(', ')
+        const bkStr = bkCats.join(', ')
+        if (curStr !== bkStr) {
+          cSpan.textContent = `分类变化：当前=[${curStr || '无'}]，备份=[${bkStr || '无'}]`
+        } else {
+          cSpan.textContent = '分类：' + (bkStr || curStr || '无')
+        }
+        left.appendChild(cSpan)
+      }
+      const getTags = (p) => {
+        const raw = p.tags || p.mt_keywords || ''
+        const arr = Array.isArray(raw) ? raw : (raw ? String(raw).split(',') : [])
+        return arr.map((x) => String(x || '').trim()).filter(Boolean)
+      }
+      const curTags = getTags(post)
+      const bkTags = getTags(bk.post || {})
+      if (curTags.length || bkTags.length) {
+        const tgSpan = document.createElement('span')
+        tgSpan.style.fontSize = '11px'
+        tgSpan.style.color = 'var(--muted)'
+        const curStr2 = curTags.join(', ')
+        const bkStr2 = bkTags.join(', ')
+        if (curStr2 !== bkStr2) {
+          tgSpan.textContent = `标签变化：当前=[${curStr2 || '无'}]，备份=[${bkStr2 || '无'}]`
+        } else {
+          tgSpan.textContent = '标签：' + (bkStr2 || curStr2 || '无')
+        }
+        left.appendChild(tgSpan)
+      }
+      const desc = String(bk.post?.description || bk.post?.content || '').trim()
+      if (desc) {
+        const snippet = desc.length > 80 ? desc.slice(0, 80) + '…' : desc
+        const dSpan = document.createElement('span')
+        dSpan.style.fontSize = '11px'
+        dSpan.style.color = 'var(--muted)'
+        dSpan.textContent = '摘要：' + snippet
+        left.appendChild(dSpan)
+      }
+    } catch {}
+    row.appendChild(left)
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'tm-typecho-btn'
+    btn.textContent = idx === 0 ? '最新备份' : '回滚到此版本'
+    btn.addEventListener('click', () => { void doRollback(bk) })
+    row.appendChild(btn)
+
+    listEl.appendChild(row)
+  })
+
+  body.appendChild(listEl)
+
+  const footer = document.createElement('div')
+  footer.className = 'tm-typecho-settings-footer'
+  const btnClose = document.createElement('button')
+  btnClose.className = 'tm-typecho-btn'
+  btnClose.textContent = '关闭'
+  btnClose.addEventListener('click', () => {
+    try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
+    rollbackOverlayEl = null
+  })
+  footer.appendChild(btnClose)
+  dlg.appendChild(footer)
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
+      rollbackOverlayEl = null
+    }
+  })
+
+  document.body.appendChild(overlay)
+  rollbackOverlayEl = overlay
+}
+
 async function renderPostTable() {
   if (!listBodyEl) return
   let items = sessionState.posts.slice()
@@ -1220,6 +1506,7 @@ async function renderPostTable() {
   const start = sessionState.pageIndex * ps
   const end = start + ps
   const pageItems = items.slice(start, end)
+  sessionState.lastPageItems = pageItems
 
   listBodyEl.innerHTML = ''
   if (pageItems.length === 0) {
@@ -1231,6 +1518,11 @@ async function renderPostTable() {
     for (const p of pageItems) {
       const row = document.createElement('div')
       row.className = 'tm-typecho-row'
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        void openRowContextMenu(globalContextRef, p, e.clientX, e.clientY)
+      })
 
       const cid = p.postid || p.postId || p.cid || p.id
       const title = String(p.title || '').trim() || `(未命名 #${cid || ''})`
@@ -1296,6 +1588,13 @@ async function renderPostTable() {
       btnUpdate.style.marginLeft = '6px'
       btnUpdate.addEventListener('click', () => { void publishCurrentForPost(globalContextRef, p) })
       cellActions.appendChild(btnUpdate)
+
+      const btnRollback = document.createElement('button')
+      btnRollback.className = 'tm-typecho-btn'
+      btnRollback.textContent = '回滚'
+      btnRollback.style.marginLeft = '6px'
+      btnRollback.addEventListener('click', () => { void openRollbackDialog(globalContextRef, p) })
+      cellActions.appendChild(btnRollback)
       row.appendChild(cellActions)
 
       listBodyEl.appendChild(row)
@@ -1305,6 +1604,29 @@ async function renderPostTable() {
   if (pageInfoEl) {
     if (total === 0) pageInfoEl.textContent = '共 0 篇'
     else pageInfoEl.textContent = `共 ${total} 篇 · 第 ${sessionState.pageIndex + 1}/${maxPageIndex + 1} 页`
+  }
+  if (headSelectAllCheckbox) {
+    if (!pageItems.length) {
+      headSelectAllCheckbox.checked = false
+      headSelectAllCheckbox.indeterminate = false
+    } else {
+      let checkedCount = 0
+      for (const p of pageItems) {
+        const cid = p.postid || p.postId || p.cid || p.id
+        if (!cid && cid !== 0) continue
+        if (sessionState.selectedIds && sessionState.selectedIds.has(String(cid))) checkedCount++
+      }
+      if (checkedCount === 0) {
+        headSelectAllCheckbox.checked = false
+        headSelectAllCheckbox.indeterminate = false
+      } else if (checkedCount === pageItems.length) {
+        headSelectAllCheckbox.checked = true
+        headSelectAllCheckbox.indeterminate = false
+      } else {
+        headSelectAllCheckbox.checked = false
+        headSelectAllCheckbox.indeterminate = true
+      }
+    }
   }
   if (prevPageBtn) prevPageBtn.disabled = sessionState.pageIndex <= 0
   if (nextPageBtn) nextPageBtn.disabled = sessionState.pageIndex >= maxPageIndex
@@ -1525,6 +1847,16 @@ async function downloadSinglePost(context, post) {
 
     await writeTextFileAny(context, fullPath, finalDoc)
     context.ui.notice('已保存到本地：' + fullPath, 'ok', 2400)
+
+    // 刷新文件树
+    try {
+      const refreshFn = typeof window !== 'undefined' ? window.flymdRefreshFileTree : null
+      if (refreshFn && typeof refreshFn === 'function') {
+        await refreshFn()
+      }
+    } catch (e) {
+      console.log('[Typecho Manager] 刷新文件树失败，但不影响下载:', e)
+    }
   } catch (e) {
     console.error('[Typecho Manager] 下载文章失败', e)
     const msg = e && e.message ? e.message : String(e || '未知错误')
@@ -2051,6 +2383,21 @@ async function publishCurrentDocument(context) {
 
   try {
     if (hasCid) {
+      // 在更新前保存远端快照用于回滚
+      if (remoteSnapshot && s) {
+        try {
+          const backups = s.backups && typeof s.backups === 'object' ? s.backups : {}
+          const key = String(cid)
+          const list = Array.isArray(backups[key]) ? backups[key] : []
+          list.push({ ts: new Date().toISOString(), post: remoteSnapshot })
+          while (list.length > 5) list.shift()
+          backups[key] = list
+          s.backups = backups
+          sessionState.settings = await saveSettings(context, s)
+        } catch (e) {
+          console.error('[Typecho Manager] 保存回滚备份失败', e)
+        }
+      }
       // 已有远端 ID：执行编辑
       await xmlRpcCall(context, s, 'metaWeblog.editPost', [
         String(cid),

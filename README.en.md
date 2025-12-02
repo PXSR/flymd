@@ -292,6 +292,7 @@ Full License: [LICENSE](LICENSE) | Third-Party Components: [THIRD-PARTY-NOTICES.
 | Developer | Contribution |
 |-----------|-------------|
 | [xf959211192](https://github.com/xf959211192) | Telegraph-Image image hosting uploader |
+| [Vita0519](https://github.com/Vita0519) | Xiaohongshu copywriting generator AI extension |
 
 ---
 

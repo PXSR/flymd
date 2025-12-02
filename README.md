@@ -291,6 +291,7 @@ FlyMD 支持通过扩展插件增强功能：
 | 开发者 | 贡献 |
 |--------|------|
 | [xf959211192](https://github.com/xf959211192) | Telegraph-Image 图床上传 |
+| [Vita0519](https://github.com/Vita0519) | 小红书文案生成 AI 文案扩展 |
 
 ---
 

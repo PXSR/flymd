@@ -107,6 +107,17 @@
         "ref": "https://raw.githubusercontent.com/flyhunterl/flymd/main/public/plugins/typecho-manager/manifest.json",
         "type": "manifest"
       }
+    },
+    {
+      "homepage": "https://github.com/Vita0519/AI-Copywriting-All-Rounder",
+      "name": "小红书文案生成",
+      "description": "接入 AI，内置小红书爆款风格，支持一键润色、扩写与自定义提示词模板。",
+      "author": "Vita0519",
+      "id": "xhs-copywriter",
+      "install": {
+        "ref": "Vita0519/AI-Copywriting-All-Rounder@main",
+        "type": "github"
+      }
     }
   ]
 }

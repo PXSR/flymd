@@ -6,6 +6,12 @@ import type { Node } from '@milkdown/prose/model'
 import type { EditorView, NodeView } from '@milkdown/prose/view'
 import { HighlightCodeBlockNodeView } from './highlight'
 
+// 检测当前是否为夜间模式
+function isDarkMode(): boolean {
+  return document.body.classList.contains('dark-mode') ||
+    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+}
+
 // Mermaid 渲染函数
 async function renderMermaid(container: HTMLElement, code: string) {
   try {
@@ -16,15 +22,40 @@ async function renderMermaid(container: HTMLElement, code: string) {
     try { (mermaid as any).parseError = () => {} } catch {}
     try { if ((mermaid as any).mermaidAPI) (mermaid as any).mermaidAPI.parseError = () => {} } catch {}
 
+    // 根据夜间模式选择主题
+    const dark = isDarkMode()
+    const theme = dark ? 'dark' : 'default'
+
     try {
       mermaid.initialize?.({
         startOnLoad: false,
         securityLevel: 'loose',
-        theme: 'default',
+        theme: theme,
         logLevel: 'fatal' as any,
         fontSize: 16 as any,
         flowchart: { useMaxWidth: true } as any,
-        themeVariables: { fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif', fontSize: '16px' } as any,
+        themeVariables: dark ? {
+          fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+          fontSize: '16px',
+          // VS Code Dark+ 风格配色
+          primaryColor: '#3c3c3c',
+          primaryTextColor: '#d4d4d4',
+          primaryBorderColor: '#505050',
+          lineColor: '#808080',
+          secondaryColor: '#252526',
+          tertiaryColor: '#1e1e1e',
+          background: '#1e1e1e',
+          mainBkg: '#252526',
+          secondBkg: '#1e1e1e',
+          border1: '#505050',
+          border2: '#3c3c3c',
+          arrowheadColor: '#d4d4d4',
+          textColor: '#d4d4d4',
+          nodeTextColor: '#d4d4d4',
+        } : {
+          fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+          fontSize: '16px'
+        },
       })
     } catch {}
 
@@ -137,7 +168,8 @@ class MermaidNodeView implements NodeView {
     // 创建图表容器
     this.chartContainer = document.createElement('div')
     this.chartContainer.classList.add('mermaid-chart-display')
-    this.chartContainer.style.background = 'var(--wysiwyg-bg, #f5f5f5)'
+    // 夜间模式使用透明背景，让 SVG 自适应
+    this.chartContainer.style.background = 'transparent'
     this.chartContainer.style.borderRadius = '4px'
     this.chartContainer.style.padding = '8px'
     this.chartContainer.style.minHeight = '50px'
@@ -151,10 +183,13 @@ class MermaidNodeView implements NodeView {
       console.log('[Mermaid Plugin] 双击图表，切换到源代码')
       // 显示源代码，隐藏图表
       this.preWrapper.style.display = 'block'
-      this.preWrapper.style.border = '1px solid #ccc'
+      // 根据夜间模式设置样式
+      const dark = isDarkMode()
+      this.preWrapper.style.border = dark ? '1px solid #3c3c3c' : '1px solid #ccc'
       this.preWrapper.style.padding = '8px'
       this.preWrapper.style.borderRadius = '4px'
-      this.preWrapper.style.background = '#fff'
+      this.preWrapper.style.background = dark ? '#1e1e1e' : '#fff'
+      this.preWrapper.style.color = dark ? '#d4d4d4' : '#1e1e1e'
       this.chartContainer.style.display = 'none'
       // 聚焦到代码编辑区
       requestAnimationFrame(() => {

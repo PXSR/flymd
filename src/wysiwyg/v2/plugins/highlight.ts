@@ -1,5 +1,5 @@
 // 代码块语法高亮 NodeView：使用 highlight.js 为非 mermaid 代码块添加高亮
-// 采用 overlay 方式：contentDOM 保持纯文本可编辑，上方叠加高亮显示层
+// 采用 overlay 方式：contentDOM 保持纯文本可编辑，下方叠加高亮显示层
 import type { Node } from '@milkdown/prose/model'
 import type { EditorView, NodeView } from '@milkdown/prose/view'
 
@@ -8,6 +8,7 @@ export class HighlightCodeBlockNodeView implements NodeView {
   dom: HTMLElement
   contentDOM: HTMLElement
   private highlightLayer: HTMLElement
+  private codeWrapper: HTMLElement
   private node: Node
   private lastCode: string = ''
   private highlightTimer: number | null = null
@@ -19,41 +20,49 @@ export class HighlightCodeBlockNodeView implements NodeView {
     // 创建 <pre> 容器
     this.dom = document.createElement('pre')
     this.dom.classList.add('code-block-wrapper')
-    this.dom.style.position = 'relative'
     if (lang) {
       this.dom.setAttribute('data-language', lang)
     }
 
+    // 创建一个内部包装器，用于精确对齐两个层
+    this.codeWrapper = document.createElement('div')
+    this.codeWrapper.classList.add('code-layers')
+    this.codeWrapper.style.position = 'relative'
+    this.dom.appendChild(this.codeWrapper)
+
     // 创建高亮显示层（只读，显示高亮后的代码）
+    // 放在底层，contentDOM 透明覆盖在上面
     this.highlightLayer = document.createElement('code')
     this.highlightLayer.classList.add('highlight-layer')
     if (lang) {
       this.highlightLayer.classList.add(`language-${lang}`)
     }
-    // 高亮层样式：绝对定位覆盖在 contentDOM 上方
-    this.highlightLayer.style.position = 'absolute'
-    this.highlightLayer.style.top = '0'
-    this.highlightLayer.style.left = '0'
-    this.highlightLayer.style.right = '0'
-    this.highlightLayer.style.bottom = '0'
-    this.highlightLayer.style.pointerEvents = 'none' // 不拦截鼠标事件
+    this.highlightLayer.style.display = 'block'
     this.highlightLayer.style.whiteSpace = 'pre'
-    this.highlightLayer.style.overflow = 'hidden'
-    this.dom.appendChild(this.highlightLayer)
+    this.highlightLayer.style.pointerEvents = 'none'
+    this.codeWrapper.appendChild(this.highlightLayer)
 
     // 创建 <code> 作为 contentDOM（ProseMirror 可编辑区域）
+    // 绝对定位覆盖在 highlightLayer 上方
     this.contentDOM = document.createElement('code')
     this.contentDOM.classList.add('editable-layer')
     if (lang) {
       this.contentDOM.classList.add(`language-${lang}`)
     }
-    // 编辑层样式：文字透明，只显示光标
-    this.contentDOM.style.position = 'relative'
+    // 编辑层样式：文字透明，只显示光标，绝对定位完全覆盖高亮层
+    this.contentDOM.style.position = 'absolute'
+    this.contentDOM.style.top = '0'
+    this.contentDOM.style.left = '0'
+    this.contentDOM.style.right = '0'
+    this.contentDOM.style.bottom = '0'
+    this.contentDOM.style.display = 'block'
     this.contentDOM.style.color = 'transparent'
-    this.contentDOM.style.caretColor = 'var(--fg, #333)' // 光标可见
+    this.contentDOM.style.caretColor = 'var(--fg, #d4d4d4)'
     this.contentDOM.style.whiteSpace = 'pre'
     this.contentDOM.style.background = 'transparent'
-    this.dom.appendChild(this.contentDOM)
+    this.contentDOM.style.margin = '0'
+    this.contentDOM.style.padding = '0'
+    this.codeWrapper.appendChild(this.contentDOM)
 
     // 初始高亮（延迟执行，等待 ProseMirror 填充内容）
     requestAnimationFrame(() => {

@@ -3615,59 +3615,104 @@ html, body { overflow: hidden; }
 .preview code.hljs .hljs-number, .preview code.hljs .hljs-literal, .preview code.hljs .hljs-bullet { color: var(--c-num); }
 .preview code.hljs .hljs-comment, .preview code.hljs .hljs-quote { color: var(--c-com); font-style: italic; }
 
-/* 所见模式代码块样式：深色背景，不跟随主题 */
-.container.wysiwyg-v2 .ProseMirror pre code {
-  color: #d4d4d4;
-  background: transparent;
+/* 所见模式代码块：亮色模式（VS Code Light+ 风格） */
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
+  background: #f5f5f5 !important;
+  border: 1px solid #e0e0e0;
+  padding: 12px 16px;
+  margin: 0.5em 0;
+  border-radius: 4px;
+  overflow: auto;
 }
-
-/* 所见模式代码块背景：深色固定背景 */
-.container.wysiwyg-v2 .ProseMirror pre {
-  background: #1e1e1e !important;
-  border: 1px solid #3c3c3c;
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .code-layers {
+  position: relative;
 }
-
-/* 所见模式代码块语法高亮（VS Code 暗色主题颜色，默认适配深色背景） */
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer {
-  color: #d4d4d4;
-  padding: inherit;
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper code {
+  font-family: Consolas, Monaco, 'Courier New', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  tab-size: 4 !important;
+  display: block;
+}
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .highlight-layer {
+  color: #1e1e1e;
+  pointer-events: none;
+}
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .editable-layer {
+  color: transparent !important;
+  caret-color: #1e1e1e !important;
+  background: transparent !important;
 }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-keyword,
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-selector-tag,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-built_in { color: #569cd6; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-built_in { color: #0000ff; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title,
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-section,
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-function,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title\.function_ { color: #dcdcaa; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title\.function_ { color: #795e26; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-string,
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-attr,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-template-variable { color: #ce9178; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-template-variable { color: #a31515; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-number,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-literal { color: #b5cea8; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-literal { color: #098658; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-comment,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-quote { color: #6a9955; font-style: italic; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-quote { color: #008000; font-style: italic; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-variable,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-params { color: #9cdcfe; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-params { color: #001080; }
 .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-class,
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-type { color: #4ec9b0; }
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-property { color: #9cdcfe; }
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-operator { color: #d4d4d4; }
-.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-punctuation { color: #d4d4d4; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-type { color: #267f99; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-property { color: #001080; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-operator { color: #1e1e1e; }
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-punctuation { color: #1e1e1e; }
 
-/* 暗色模式下：确保所见模式代码块高亮正常显示 */
+/* 所见模式代码块：夜间模式（VS Code Dark+ 风格） */
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
+  background: #1e1e1e !important;
+  border-color: #3c3c3c !important;
+}
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .highlight-layer {
+  color: #d4d4d4 !important;
+}
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .editable-layer {
+  color: transparent !important;
+  caret-color: #d4d4d4 !important;
+  background: transparent !important;
+}
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-keyword,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-selector-tag,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-built_in { color: #569cd6 !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-section,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-function,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-title\.function_ { color: #dcdcaa !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-string,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-attr,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-template-variable { color: #ce9178 !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-number,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-literal { color: #b5cea8 !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-comment,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-quote { color: #6a9955 !important; font-style: italic; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-variable,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-params { color: #9cdcfe !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-class,
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-type { color: #4ec9b0 !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-property { color: #9cdcfe !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-operator { color: #d4d4d4 !important; }
+body.dark-mode .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-punctuation { color: #d4d4d4 !important; }
+
+/* 同时支持系统暗色模式偏好（仅作为 body.dark-mode 的备用） */
 @media (prefers-color-scheme: dark) {
-  /* 强制深色代码块背景，覆盖主题样式 */
-  .container.wysiwyg-v2 .ProseMirror pre {
+  body:not(.light-mode) .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
     background: #1e1e1e !important;
     border-color: #3c3c3c !important;
   }
-  .container.wysiwyg-v2 .ProseMirror pre code {
+  body:not(.light-mode) .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .highlight-layer {
     color: #d4d4d4 !important;
-    background: transparent !important;
   }
-  /* 确保高亮层在暗色模式下可见 */
-  .container.wysiwyg-v2 .ProseMirror pre .highlight-layer {
-    color: #d4d4d4 !important;
+  body:not(.light-mode) .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper .editable-layer {
+    color: transparent !important;
+    caret-color: #d4d4d4 !important;
+    background: transparent !important;
   }
   .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-keyword,
   .container.wysiwyg-v2 .ProseMirror pre .highlight-layer .hljs-selector-tag,

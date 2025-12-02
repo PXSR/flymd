@@ -1064,6 +1064,19 @@ async function downloadSinglePost(context, post) {
     if ((!knownCats || !knownCats.length) && Array.isArray(sessionState.posts) && sessionState.posts.length) {
       knownCats = extractCategoriesFromPosts(sessionState.posts)
     }
+    // 首次发布时若还没有分类缓存，则自动拉取一次远端文章用于提取分类
+    if (!knownCats || !knownCats.length) {
+      try {
+        if (sessionState.settings && sessionState.settings.endpoint && sessionState.settings.username && sessionState.settings.password) {
+          const posts = await loadAllPosts(context, sessionState.settings)
+          if (Array.isArray(posts) && posts.length) {
+            sessionState.posts = posts
+            knownCats = extractCategoriesFromPosts(posts)
+            sessionState.categories = knownCats.slice()
+          }
+        }
+      } catch {}
+    }
 
     const formatDateTimeLocal = (d) => {
       if (!d) return ''

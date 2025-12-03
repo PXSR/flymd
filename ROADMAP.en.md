@@ -2,6 +2,17 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.5.8
+- Added: Global body font toggle that lets your custom text font apply to the entire UI (menus, buttons, plugin windows) and a shared monospace font variable used by the editor, preview and AI assistant so typography stays consistent across the app.
+- Added: Custom font manager in the theme panel that lists installed fonts and lets you delete them, automatically cleaning up font files, injected styles and any theme preferences that reference removed fonts.
+- Improved: Switching between Edit, WYSIWYG and Reading modes now keeps the viewport and scroll position aligned so the text under your cursor no longer jumps when you flip modes to compare formatting.
+- Improved: Reading mode code blocks in dark mode now use consistent syntax highlighting and backgrounds with the editor, restoring contrast and readability at night.
+- Improved: The extension marketplace now uses a stable sort order (built-in, recommended, then A–Z by name), adds an "Updatable" filter, and proactively invalidates cached metadata when sort rules or structure change so you always see fresh plugin lists.
+- Improved: Sticky note mode now ignores global dark mode and refines its toolbar buttons, while the native context menu is disabled on notes to avoid accidental right-click actions on small note windows.
+- Improved: Focus Mode and main menu buttons receive layout and spacing tweaks for clearer hierarchies and more predictable hit targets, aligning controls with the compact title bar design.
+- Improved: AI assistant dark mode styling and the Vision toggle appearance are tuned to match flyMD’s night theme, with code snippets honoring the global monospace font setting.
+- Fixed: Restored window dragging on Linux and macOS when compact title bar mode is enabled so you can still drag the window from inside flyMD even when the native title bar is hidden.
+
 ## Update v0.5.7
 - Added: Compact title bar mode with custom window controls drawn inside flyMD, toggled from the theme panel and persisted between launches, including integration with Focus Mode so the native title bar can be fully hidden.
 - Added: Syntax highlighting for code blocks in WYSIWYG mode plus a compact icon-style copy button that adapts to light/dark backgrounds for easier reading and copying of long code snippets.

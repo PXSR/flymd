@@ -1965,9 +1965,9 @@ app.innerHTML = `
     </div>
     <div class="filename" id="filename">${t('filename.untitled')}</div>
     <div class="window-controls" id="window-controls">
-      <button class="window-btn window-minimize" id="window-minimize" title="最小化">－</button>
-      <button class="window-btn window-maximize" id="window-maximize" title="最大化">□</button>
-      <button class="window-btn window-close" id="window-close" title="关闭">×</button>
+      <button class="window-btn window-minimize" id="window-minimize" title="最小化">-</button>
+      <button class="window-btn window-maximize" id="window-maximize" title="最大化">+</button>
+      <button class="window-btn window-close" id="window-close" title="关闭">x</button>
     </div>
   </div>
   <div class="focus-trigger-zone" id="focus-trigger-zone"></div>
@@ -2015,11 +2015,11 @@ try {
         const isMax = await win.isMaximized()
         if (isMax) {
           await win.unmaximize()
-          maxBtn.textContent = '□'
+          maxBtn.textContent = '+'
           maxBtn.title = '最大化'
         } else {
           await win.maximize()
-          maxBtn.textContent = '＋'
+          maxBtn.textContent = '+'
           maxBtn.title = '还原'
         }
       } catch {}

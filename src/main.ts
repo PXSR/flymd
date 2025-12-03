@@ -356,6 +356,8 @@ let mode: Mode = 'edit'
 // 所见即所得开关（Overlay 模式）
 let wysiwyg = false
 let wysiwygV2Active = false
+// 模式切换时的滚动位置缓存（百分比 0-1）
+let lastScrollPercent = 0
 let _wysiwygRaf = 0
 // 仅在按回车时触发渲染（可选开关，默认关闭）
 let wysiwygEnterToRenderOnly = false
@@ -2563,7 +2565,7 @@ async function saveImageToLocalAndGetPath(file: File, fname: string): Promise<st
 async function setWysiwygEnabled(enable: boolean) {
   try {
     if (wysiwyg === enable) return
-    const scrollPercent = getScrollPercent()
+    saveScrollPosition()  // 保存当前滚动位置到全局缓存
     wysiwyg = enable
     const container = document.querySelector('.container') as HTMLDivElement | null
     // 旧所见模式已移除：不要再添加 .wysiwyg，否则容器会被隐藏
@@ -2582,8 +2584,17 @@ async function setWysiwygEnabled(enable: boolean) {
           const host = document.querySelector('.container') as HTMLDivElement | null
           if (host) host.appendChild(root)
         }
-        // 给 root 一个占位提示，避免用户误以为空白
-        try { if (root) root.textContent = '正在加载所见编辑器…' } catch {}
+        // 确保 .scrollView 滚动容器存在（所见模式的实际滚动宿主）
+        let scrollView = root.querySelector('.scrollView') as HTMLDivElement | null
+        if (!scrollView) {
+          scrollView = document.createElement('div')
+          scrollView.className = 'scrollView'
+          // 清空 root 并添加 scrollView
+          root.innerHTML = ''
+          root.appendChild(scrollView)
+        }
+        // 给 scrollView 一个占位提示，避免用户误以为空白
+        try { if (scrollView) scrollView.textContent = '正在加载所见编辑器…' } catch {}
         // 调用 enableWysiwygV2 来创建/更新编辑器（会自动处理清理和重建）
         const __st = (editor as HTMLTextAreaElement).selectionStart >>> 0
         let __mdInit = (editor as HTMLTextAreaElement).value
@@ -2599,7 +2610,7 @@ async function setWysiwygEnabled(enable: boolean) {
         const fmSplit = splitYamlFrontMatter(__mdInit)
         currentFrontMatter = fmSplit.frontMatter
         const __mdInitBody = fmSplit.body
-        await enableWysiwygV2(root!, __mdInitBody, (mdNext) => {
+        await enableWysiwygV2(scrollView!, __mdInitBody, (mdNext) => {
           try {
             const bodyNext = String(mdNext || '').replace(/\u2003/g, '&emsp;')
             const fm = currentFrontMatter || ''
@@ -2642,7 +2653,7 @@ async function setWysiwygEnabled(enable: boolean) {
             bindOutlineScrollSync()
           }
         } catch {}
-        setTimeout(() => setScrollPercent(scrollPercent), 100)
+        restoreScrollPosition(3, 100)  // 带重试机制恢复滚动位置
         // 重新扫描滚动容器（确保 WYSIWYG 的 .scrollView 滚动监听器生效）
         try { rescanScrollContainers() } catch {}
         return
@@ -2698,7 +2709,7 @@ async function setWysiwygEnabled(enable: boolean) {
         }
       } catch {}
       try { (editor as any).style.paddingBottom = '40px' } catch {}
-      setTimeout(() => setScrollPercent(scrollPercent), 0)
+      restoreScrollPosition(2, 50)  // 带重试机制恢复滚动位置
     }
     // 更新按钮提示
     try {
@@ -5146,19 +5157,36 @@ function setScrollPercent(percent: number) {
   } catch {}
 }
 
+// 保存当前滚动位置到全局缓存
+function saveScrollPosition() {
+  lastScrollPercent = getScrollPercent()
+}
+
+// 恢复滚动位置（带重试机制确保DOM就绪）
+function restoreScrollPosition(retries = 3, delay = 50) {
+  const apply = () => setScrollPercent(lastScrollPercent)
+  apply()  // 立即尝试一次
+  if (retries > 0) {
+    // 延迟重试，应对DOM未完全就绪的情况
+    setTimeout(() => apply(), delay)
+    if (retries > 1) setTimeout(() => apply(), delay * 2)
+    if (retries > 2) setTimeout(() => apply(), delay * 4)
+  }
+}
+
 // 切换模式
 async function toggleMode() {
-  const scrollPercent = getScrollPercent()
+  saveScrollPosition()  // 保存当前滚动位置到全局缓存
   mode = mode === 'edit' ? 'preview' : 'edit'
   if (mode === 'preview') {
     try { updateWysiwygVirtualPadding() } catch {}
     try { preview.classList.remove('hidden') } catch {}
     try { await renderPreview() } catch {}
-    setTimeout(() => setScrollPercent(scrollPercent), 50)
+    restoreScrollPosition(2, 50)  // 带重试机制恢复滚动位置
   } else {
     if (!wysiwyg) try { preview.classList.add('hidden') } catch {}
     try { editor.focus() } catch {}
-    setTimeout(() => setScrollPercent(scrollPercent), 0)
+    restoreScrollPosition()  // 带重试机制恢复滚动位置
   }
   ;(document.getElementById('btn-toggle') as HTMLButtonElement).textContent = mode === 'edit' ? '阅读' : '编辑'
   // 模式切换后，如大纲面板可见，强制按当前模式重建一次大纲
@@ -8696,16 +8724,27 @@ function showModeMenu() {
   if (!anchor) return
   showTopMenu(anchor, [
     { label: t('mode.edit'), accel: 'Ctrl+E', action: async () => {
-      if (wysiwyg) { try { await setWysiwygEnabled(false) } catch {}; return }
-      if (mode !== 'edit') { mode = 'edit'; try { preview.classList.add('hidden') } catch {}; try { editor.focus() } catch {}; try { syncToggleButton() } catch {}; try { updateChromeColorsForMode('edit') } catch {} }
+      saveScrollPosition()
+      if (wysiwyg) { try { await setWysiwygEnabled(false) } catch {}; restoreScrollPosition(); return }
+      if (mode !== 'edit') {
+        mode = 'edit'
+        try { preview.classList.add('hidden') } catch {}
+        try { editor.focus() } catch {}
+        try { syncToggleButton() } catch {}
+        try { updateChromeColorsForMode('edit') } catch {}
+        restoreScrollPosition()
+      }
     } },
-       { label: t('mode.read'), accel: 'Ctrl+R', action: async () => {
+    { label: t('mode.read'), accel: 'Ctrl+R', action: async () => {
+      saveScrollPosition()
+      const wasWysiwyg = wysiwyg
+      if (wasWysiwyg) { try { await setWysiwygEnabled(false) } catch {} }
       mode = 'preview'
       try { preview.classList.remove('hidden') } catch {}
       try { await renderPreview() } catch {}
-      if (wysiwyg) { try { await setWysiwygEnabled(false) } catch {}; return }
       try { syncToggleButton() } catch {}
       try { updateChromeColorsForMode('preview') } catch {}
+      restoreScrollPosition()
     } },
     { label: t('mode.wysiwyg'), accel: 'Ctrl+W', action: () => { void setWysiwygEnabled(true) } },
   ])
@@ -10224,6 +10263,7 @@ function bindEvents() {
       e.preventDefault();
       try { e.stopPropagation(); /* 防止编辑器内部再次处理 */ } catch {}
       try { (e as any).stopImmediatePropagation && (e as any).stopImmediatePropagation() } catch {}
+      saveScrollPosition()  // 保存当前滚动位置
       try {
         if (wysiwyg) {
           // 先确定进入"阅读"(预览)状态，再退出所见，避免退出所见时根据旧 mode 隐藏预览
@@ -10236,6 +10276,7 @@ function bindEvents() {
           setTimeout(() => updateFocusSidebarBg(), 100);
           // 更新外圈UI颜色
           try { updateChromeColorsForMode('preview') } catch {}
+          restoreScrollPosition()  // 恢复滚动位置
           return
         }
       } catch {}
@@ -10248,6 +10289,7 @@ function bindEvents() {
         setTimeout(() => updateFocusSidebarBg(), 100);
         // 更新外圈UI颜色
         try { updateChromeColorsForMode('preview') } catch {}
+        restoreScrollPosition()  // 恢复滚动位置
       }
       return
     }

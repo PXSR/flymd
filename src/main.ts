@@ -2723,6 +2723,7 @@ async function setWysiwygEnabled(enable: boolean) {
 
 async function toggleWysiwyg() {
   await setWysiwygEnabled(!wysiwyg)
+  try { notifyModeChange() } catch {}
 }
 
 function updateWysiwygLineHighlight() {
@@ -3227,7 +3228,15 @@ function showWidthBubble(): void {
 }
 
 // ===== 通知系统（支持多消息堆叠显示） =====
-type NotificationType = 'sync' | 'extension' | 'appUpdate' | 'plugin-success' | 'plugin-error'
+type NotificationType =
+  | 'sync'
+  | 'extension'
+  | 'appUpdate'
+  | 'plugin-success'
+  | 'plugin-error'
+  | 'mode-edit'
+  | 'mode-preview'
+  | 'mode-wysiwyg'
 
 interface NotificationConfig {
   icon: string
@@ -3276,6 +3285,21 @@ class NotificationManager {
       icon: '✖',
       bgColor: 'rgba(239,68,68,0.12)', // 浅红色（red-500）
       duration: 3000
+    },
+    'mode-edit': {
+      icon: '✏️',
+      bgColor: 'rgba(59,130,246,0.14)', // 编辑模式：偏蓝
+      duration: 1600
+    },
+    'mode-preview': {
+      icon: '📖',
+      bgColor: 'rgba(245,158,11,0.16)', // 阅读模式：偏暖
+      duration: 1600
+    },
+    'mode-wysiwyg': {
+      icon: '📝',
+      bgColor: 'rgba(139,92,246,0.16)', // 所见模式：偏紫
+      duration: 1600
     }
   }
 
@@ -3394,6 +3418,27 @@ class NotificationManager {
       }
     } catch {}
   }
+}
+
+// 模式切换提示：在右下角通知区域显示当前模式
+function notifyModeChange(): void {
+  try {
+    const isWys = !!wysiwyg
+    const curMode = mode
+    let type: NotificationType
+    let msg: string
+    if (isWys) {
+      type = 'mode-wysiwyg'
+      msg = '所见模式'
+    } else if (curMode === 'preview') {
+      type = 'mode-preview'
+      msg = '阅读模式'
+    } else {
+      type = 'mode-edit'
+      msg = '编辑模式'
+    }
+    NotificationManager.show(type, msg, 1600)
+  } catch {}
 }
 
 // 向后兼容：保留旧的 sync-status 接口
@@ -5188,12 +5233,14 @@ async function toggleMode() {
   } catch {}
   // 触发模式变更事件（专注模式侧栏背景跟随）
   try { window.dispatchEvent(new CustomEvent('flymd:mode:changed', { detail: { mode } })) } catch {}
+  try { notifyModeChange() } catch {}
 }
 
 // 提取 Ctrl+E 的切换逻辑，供快捷键和其它入口共用
 async function handleToggleModeShortcut() {
   if (wysiwyg) {
     try { await setWysiwygEnabled(false) } catch {}
+    try { notifyModeChange() } catch {}
     // 更新专注模式侧栏背景色
     setTimeout(() => updateFocusSidebarBg(), 100)
     return
@@ -5349,6 +5396,7 @@ async function openFile2(preset?: unknown) {
         mode = 'preview'
         try { preview.classList.remove('hidden') } catch {}
         try { syncToggleButton() } catch {}
+        try { notifyModeChange() } catch {}
         await pushRecent(currentFilePath)
         await renderRecentPanel(false)
         logInfo('PDF 预览就绪', { path: selectedPath })
@@ -7407,6 +7455,7 @@ async function toggleStickyEditMode(btn: HTMLButtonElement) {
   btn.innerHTML = getStickyEditIcon(newIsEditing)
   btn.classList.toggle('active', newIsEditing)
   btn.title = newIsEditing ? '切换到阅读模式' : '切换到编辑模式'
+  try { notifyModeChange() } catch {}
 }
 
 // 切换窗口拖动锁定
@@ -8716,7 +8765,12 @@ function showModeMenu() {
   showTopMenu(anchor, [
     { label: t('mode.edit'), accel: 'Ctrl+E', action: async () => {
       saveScrollPosition()
-      if (wysiwyg) { try { await setWysiwygEnabled(false) } catch {}; restoreScrollPosition(); return }
+      if (wysiwyg) {
+        try { await setWysiwygEnabled(false) } catch {}
+        restoreScrollPosition()
+        try { notifyModeChange() } catch {}
+        return
+      }
       if (mode !== 'edit') {
         mode = 'edit'
         try { preview.classList.add('hidden') } catch {}
@@ -8724,6 +8778,7 @@ function showModeMenu() {
         try { syncToggleButton() } catch {}
         try { updateChromeColorsForMode('edit') } catch {}
         restoreScrollPosition()
+        try { notifyModeChange() } catch {}
       }
     } },
     { label: t('mode.read'), accel: 'Ctrl+R', action: async () => {
@@ -8736,8 +8791,12 @@ function showModeMenu() {
       try { syncToggleButton() } catch {}
       try { updateChromeColorsForMode('preview') } catch {}
       restoreScrollPosition()
+      try { notifyModeChange() } catch {}
     } },
-    { label: t('mode.wysiwyg'), accel: 'Ctrl+W', action: () => { void setWysiwygEnabled(true) } },
+    { label: t('mode.wysiwyg'), accel: 'Ctrl+W', action: async () => {
+      try { await setWysiwygEnabled(true) } catch {}
+      try { notifyModeChange() } catch {}
+    } },
   ])
 }
 
@@ -10273,6 +10332,7 @@ function bindEvents() {
           // 更新外圈UI颜色
           try { updateChromeColorsForMode('preview') } catch {}
           restoreScrollPosition()  // 恢复滚动位置
+          try { notifyModeChange() } catch {}
           return
         }
       } catch {}
@@ -10286,6 +10346,7 @@ function bindEvents() {
         // 更新外圈UI颜色
         try { updateChromeColorsForMode('preview') } catch {}
         restoreScrollPosition()  // 恢复滚动位置
+        try { notifyModeChange() } catch {}
       }
       return
     }

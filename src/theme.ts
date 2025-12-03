@@ -392,37 +392,15 @@ function buildColorList(): Array<{ id: string; label: string; color: string }> {
     { id: 'sys-wys', label: '所见色', color: curW },
     { id: 'pure', label: '纯白', color: '#ffffff' },
     { id: 'parch', label: '羊皮纸', color: '#fbf5e6' },
-    { id: 'soft-blue', label: '淡蓝', color: '#f7f9fc' },
-    // 柔和护眼色系
-    { id: 'warm-gray', label: '暖灰', color: '#f6f5f1' },
-    { id: 'mist-blue', label: '雾蓝', color: '#eef3f9' },
-    { id: 'mint', label: '薄荷', color: '#eef8f1' },
-    { id: 'ivory', label: '象牙', color: '#fffaf0' },
-    // 新增护眼色系
     { id: 'beige', label: '米色', color: '#f5f5dc' },
-    { id: 'sand', label: '沙色', color: '#faf8f3' },
-    { id: 'cream', label: '奶油', color: '#fffef9' },
-    { id: 'pearl', label: '珍珠', color: '#fafaf8' },
-    // 新增冷色调
-    { id: 'sky', label: '天蓝', color: '#e8f4f8' },
-    { id: 'frost', label: '冰霜', color: '#f0f8ff' },
+    { id: 'soft-blue', label: '淡蓝', color: '#f7f9fc' },
     { id: 'lavender', label: '薰衣草', color: '#f5f3ff' },
-    // 新增暖色调
+    { id: 'ivory', label: '象牙', color: '#fffaf0' },
     { id: 'peach', label: '蜜桃', color: '#fff5ee' },
-    { id: 'rose', label: '玫瑰', color: '#fff5f7' },
-    { id: 'apricot', label: '杏色', color: '#fff8f0' },
-    // 自然色系
-    { id: 'sage', label: '鼠尾草', color: '#f0f4f0' },
-    { id: 'bamboo', label: '竹青', color: '#f2f6f0' },
+    { id: 'mint', label: '薄荷', color: '#eef8f1' },
     { id: 'cloud', label: '云白', color: '#f8fafc' },
-    // 文艺色系
     { id: 'sepia', label: '复古黄', color: '#fdf6e3' },
     { id: 'latte', label: '拿铁', color: '#f9f5f0' },
-    { id: 'mocha', label: '摩卡', color: '#f7f3ed' },
-    // 新增护眼色系
-    { id: 'tea-green', label: '茶绿', color: '#e8f5e3' },
-    { id: 'paper-white', label: '纸白', color: '#fffef7' },
-    { id: 'soft-pink', label: '柔粉', color: '#fff0f5' },
   ]
   return base.concat(_palettes)
 }
@@ -430,31 +408,16 @@ function buildColorList(): Array<{ id: string; label: string; color: string }> {
 // 夜间模式色板
 function buildDarkColorList(): Array<{ id: string; label: string; color: string }> {
   const darkBase = [
-    // 经典深色系
     { id: 'dark-pure', label: '纯黑', color: '#000000' },
     { id: 'dark-charcoal', label: '木炭', color: '#0b0c0e' },
     { id: 'dark-midnight', label: '午夜', color: '#12100d' },
-    { id: 'dark-slate', label: '石板', color: '#0f1114' },
-    // 暖色调深色
     { id: 'dark-coffee', label: '咖啡', color: '#1a1410' },
-    { id: 'dark-brown', label: '棕褐', color: '#1c1410' },
     { id: 'dark-sepia', label: '深褐', color: '#1a1612' },
-    // 冷色调深色
     { id: 'dark-navy', label: '深蓝', color: '#0d1117' },
     { id: 'dark-ocean', label: '海洋', color: '#0e1419' },
-    { id: 'dark-steel', label: '钢青', color: '#111418' },
-    // 中性深色
     { id: 'dark-graphite', label: '石墨', color: '#14161a' },
-    { id: 'dark-ash', label: '灰烬', color: '#16181c' },
-    { id: 'dark-smoke', label: '烟灰', color: '#18191d' },
-    // 柔和深色（护眼）
     { id: 'dark-olive', label: '橄榄', color: '#15160f' },
-    { id: 'dark-forest', label: '森林', color: '#0f1510' },
-    { id: 'dark-moss', label: '苔藓', color: '#12140f' },
-    // 暖灰深色
     { id: 'dark-pewter', label: '暖锡', color: '#1a1816' },
-    { id: 'dark-taupe', label: '驼灰', color: '#1c1816' },
-    { id: 'dark-umber', label: '土褐', color: '#1a1512' },
   ]
   return darkBase.concat(_palettes)
 }

@@ -1587,18 +1587,19 @@ function enterLatexSourceEdit(hitEl: HTMLElement) {
     }
 
     ta.addEventListener('keydown', (ev) => {
-      if ((ev as KeyboardEvent).key === 'Escape') { try { ov?.removeChild(wrap) } catch {}; return }
-      if ((ev as KeyboardEvent).key === 'Enter' && ((ev as KeyboardEvent).ctrlKey || (ev as KeyboardEvent).metaKey)) {
-        ev.preventDefault()
+      const kev = ev as KeyboardEvent
+      if (kev.key === 'Escape') { try { ov?.removeChild(wrap) } catch {}; return }
+      if (kev.key === 'Enter' && (kev.ctrlKey || kev.metaKey)) {
+        kev.preventDefault()
         apply()
       }
     })
-    // 点击其他区域关闭编辑框（但点击 Delete 按钮时不关闭）
+    // 点击其他区域：自动应用当前输入，再关闭编辑框（但点击 Delete 按钮时不关闭）
     ta.addEventListener('blur', (ev) => {
       const related = (ev as FocusEvent).relatedTarget as HTMLElement | null
-      // 如果焦点转移到 Delete 按钮，不关闭
+      // 如果焦点转移到 Delete 按钮，不关闭，让删除逻辑接管
       if (related && (related === delBtn || related.closest?.('button') === delBtn)) return
-      try { ov?.removeChild(wrap) } catch {}
+      apply()
     })
 
     let deleteArmed = false

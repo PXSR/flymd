@@ -231,11 +231,58 @@ export class HighlightCodeBlockNodeView implements NodeView {
       }
     })
 
-    // 点击外部关闭
+    // 常用别名映射
+    const LANG_ALIASES: Record<string, string> = {
+      'js': 'javascript',
+      'ts': 'typescript',
+      'py': 'python',
+      'rb': 'ruby',
+      'rs': 'rust',
+      'sh': 'bash',
+      'yml': 'yaml',
+      'md': 'markdown',
+      'c++': 'cpp',
+      'c#': 'csharp',
+      'cs': 'csharp',
+      'kt': 'kotlin',
+      'ps': 'powershell',
+      'ps1': 'powershell',
+      'text': 'plaintext',
+      'txt': 'plaintext',
+    }
+
+    // 自动补全：根据输入找到最佳匹配
+    const autoComplete = (input: string): string | null => {
+      if (!input) return null
+      const lower = input.toLowerCase()
+      // 检查别名
+      if (LANG_ALIASES[lower]) return LANG_ALIASES[lower]
+      // 精确匹配 id
+      const exact = POPULAR_LANGUAGES.find(l => l.id === lower)
+      if (exact) return exact.id
+      // 前缀匹配 id（如 pyt -> python）
+      const prefixMatch = POPULAR_LANGUAGES.find(l => l.id.startsWith(lower))
+      if (prefixMatch) return prefixMatch.id
+      // 前缀匹配 name
+      const nameMatch = POPULAR_LANGUAGES.find(l => l.name.toLowerCase().startsWith(lower))
+      if (nameMatch) return nameMatch.id
+      return null
+    }
+
+    // 点击外部关闭并自动补全
     this.langInput.addEventListener('blur', () => {
       // 延迟关闭，以便点击下拉项能触发
       setTimeout(() => {
         this.langDropdown.classList.remove('show')
+        // 自动补全
+        const input = this.langInput.value.trim()
+        const completed = autoComplete(input)
+        if (completed && completed !== input) {
+          selectLanguage(completed)
+        } else if (input && input !== this.node.attrs.language) {
+          // 输入了新语言但没有匹配，直接使用输入值
+          selectLanguage(input)
+        }
       }, 150)
     })
 

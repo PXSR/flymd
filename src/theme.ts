@@ -39,6 +39,14 @@ export interface ThemePrefs {
   gridBackground?: boolean
   /** 文件夹图标 */
   folderIcon?: string
+  /** 排版：行高 (1.2-2.5) */
+  lineHeight?: number
+  /** 排版：段落间距 (0-2em) */
+  paragraphSpacing?: number
+  /** 排版：内容最大宽度 (0=自适应, 600-1200px) */
+  contentMaxWidth?: number
+  /** 排版：首行缩进 (0-4em) */
+  textIndent?: number
 }
 
 export interface ThemeDefinition {
@@ -306,6 +314,30 @@ export function applyThemePrefs(prefs: ThemePrefs): void {
       }
     } catch {}
 
+    // 排版变量（未设置则移除，回退 CSS 默认）
+    try {
+      if (typeof prefs.lineHeight === 'number') {
+        c.style.setProperty('--layout-line-height', String(prefs.lineHeight))
+      } else {
+        c.style.removeProperty('--layout-line-height')
+      }
+      if (typeof prefs.paragraphSpacing === 'number') {
+        c.style.setProperty('--layout-paragraph-spacing', `${prefs.paragraphSpacing}em`)
+      } else {
+        c.style.removeProperty('--layout-paragraph-spacing')
+      }
+      if (typeof prefs.contentMaxWidth === 'number' && prefs.contentMaxWidth > 0) {
+        c.style.setProperty('--layout-content-max-width', `${prefs.contentMaxWidth}px`)
+      } else {
+        c.style.removeProperty('--layout-content-max-width')
+      }
+      if (typeof prefs.textIndent === 'number' && prefs.textIndent > 0) {
+        c.style.setProperty('--layout-text-indent', `${prefs.textIndent}em`)
+      } else {
+        c.style.removeProperty('--layout-text-indent')
+      }
+    } catch {}
+
     // 羊皮风格：通过类名挂到 .container 上
     c.classList.toggle('parchment-edit', !!prefs.parchmentEdit)
     c.classList.toggle('parchment-read', !!prefs.parchmentRead)
@@ -354,7 +386,6 @@ export function loadThemePrefs(): ThemePrefs {
       wysiwygBg: obj.wysiwygBg || DEFAULT_PREFS.wysiwygBg,
       editBgDark: obj.editBgDark || DEFAULT_PREFS.editBgDark,
       readBgDark: obj.readBgDark || DEFAULT_PREFS.readBgDark,
-      typography: (['default','serif','modern','reading','academic','compact','elegant','minimal','tech','literary'] as string[]).includes(obj.typography) ? obj.typography : 'default',
       mdStyle: (['standard','github','notion','journal','card','docs','typora','obsidian','bear','minimalist'] as string[]).includes(mdStyle) ? mdStyle : 'standard',
       themeId: obj.themeId || undefined,
       bodyFont: (typeof obj.bodyFont === 'string') ? obj.bodyFont : undefined,
@@ -362,6 +393,11 @@ export function loadThemePrefs(): ThemePrefs {
       monoFont: (typeof obj.monoFont === 'string') ? obj.monoFont : undefined,
       gridBackground: (typeof obj.gridBackground === 'boolean') ? obj.gridBackground : false,
       folderIcon: (typeof obj.folderIcon === 'string') ? obj.folderIcon : '🗂️',
+      // 排版设置（带范围校验）
+      lineHeight: (typeof obj.lineHeight === 'number' && obj.lineHeight >= 1.2 && obj.lineHeight <= 2.5) ? obj.lineHeight : undefined,
+      paragraphSpacing: (typeof obj.paragraphSpacing === 'number' && obj.paragraphSpacing >= 0 && obj.paragraphSpacing <= 2) ? obj.paragraphSpacing : undefined,
+      contentMaxWidth: (typeof obj.contentMaxWidth === 'number' && obj.contentMaxWidth >= 0 && obj.contentMaxWidth <= 1200) ? obj.contentMaxWidth : undefined,
+      textIndent: (typeof obj.textIndent === 'number' && obj.textIndent >= 0 && obj.textIndent <= 4) ? obj.textIndent : undefined,
     }
   } catch { return { ...DEFAULT_PREFS } }
 }
@@ -392,8 +428,8 @@ function registerPalette(label: string, color: string, id?: string): void {
   const _id = id || `ext-${Math.random().toString(36).slice(2, 8)}`
   _palettes.push({ id: _id, label, color })
 }
-function registerTypography(id: TypographyId, label: string, css?: string): void {
-  // 允许的排版风格
+function registerTypography(id: string, label: string, css?: string): void {
+  // 允许的排版风格（遗留 API，保留兼容性）
   if (!['default', 'serif', 'modern', 'reading', 'academic', 'compact', 'elegant', 'minimal', 'tech', 'literary'].includes(id)) return
   if (css) {
     try {
@@ -591,6 +627,38 @@ function createPanel(): HTMLDivElement {
         </label>
       </div>
       <div class="font-list" id="font-list"></div>
+    </div>
+    <div class="theme-section theme-layout-section">
+      <div class="theme-title">排版设置</div>
+      <div class="theme-layout-controls">
+        <div class="theme-slider-row">
+          <label for="layout-line-height">行高</label>
+          <input type="range" id="layout-line-height" min="1.2" max="2.5" step="0.1" value="1.75" />
+          <span class="theme-slider-value" id="layout-line-height-value">1.75</span>
+        </div>
+        <div class="theme-slider-row">
+          <label for="layout-paragraph-spacing">段落间距</label>
+          <input type="range" id="layout-paragraph-spacing" min="0" max="2" step="0.1" value="1" />
+          <span class="theme-slider-value" id="layout-paragraph-spacing-value">1em</span>
+        </div>
+        <div class="theme-slider-row">
+          <label for="layout-content-width">内容宽度</label>
+          <input type="range" id="layout-content-width" min="0" max="1200" step="50" value="860" />
+          <span class="theme-slider-value" id="layout-content-width-value">860px</span>
+        </div>
+        <div class="theme-slider-row">
+          <label for="layout-text-indent">首行缩进</label>
+          <input type="range" id="layout-text-indent" min="0" max="4" step="0.5" value="0" />
+          <span class="theme-slider-value" id="layout-text-indent-value">0em</span>
+        </div>
+        <div class="theme-option">
+          <label class="theme-checkbox-label">
+            <input type="checkbox" id="layout-auto-width" class="theme-checkbox" />
+            <span>自适应宽度</span>
+          </label>
+          <button class="theme-reset-layout-btn" id="reset-layout-btn">重置排版</button>
+        </div>
+      </div>
     </div>
   `
   return panel
@@ -869,6 +937,101 @@ export function initThemeUI(): void {
       lastSaved = { ...cur }
     })
 
+    // 排版设置控件
+    const lineHeightSlider = panel.querySelector('#layout-line-height') as HTMLInputElement | null
+    const paragraphSpacingSlider = panel.querySelector('#layout-paragraph-spacing') as HTMLInputElement | null
+    const contentWidthSlider = panel.querySelector('#layout-content-width') as HTMLInputElement | null
+    const textIndentSlider = panel.querySelector('#layout-text-indent') as HTMLInputElement | null
+    const autoWidthToggle = panel.querySelector('#layout-auto-width') as HTMLInputElement | null
+    const resetLayoutBtn = panel.querySelector('#reset-layout-btn') as HTMLButtonElement | null
+    const lineHeightValue = panel.querySelector('#layout-line-height-value') as HTMLSpanElement | null
+    const paragraphSpacingValue = panel.querySelector('#layout-paragraph-spacing-value') as HTMLSpanElement | null
+    const contentWidthValue = panel.querySelector('#layout-content-width-value') as HTMLSpanElement | null
+    const textIndentValue = panel.querySelector('#layout-text-indent-value') as HTMLSpanElement | null
+
+    // 初始化排版控件值
+    function initLayoutControls(cur: ThemePrefs) {
+      const lineHeight = cur.lineHeight ?? 1.75
+      const paragraphSpacing = cur.paragraphSpacing ?? 1
+      const contentMaxWidth = cur.contentMaxWidth ?? 860
+      const textIndent = cur.textIndent ?? 0
+      const isAutoWidth = contentMaxWidth === 0
+
+      if (lineHeightSlider) lineHeightSlider.value = String(lineHeight)
+      if (lineHeightValue) lineHeightValue.textContent = String(lineHeight)
+      if (paragraphSpacingSlider) paragraphSpacingSlider.value = String(paragraphSpacing)
+      if (paragraphSpacingValue) paragraphSpacingValue.textContent = `${paragraphSpacing}em`
+      if (contentWidthSlider) {
+        contentWidthSlider.value = isAutoWidth ? '860' : String(contentMaxWidth)
+        contentWidthSlider.disabled = isAutoWidth
+      }
+      if (contentWidthValue) contentWidthValue.textContent = isAutoWidth ? '自适应' : `${contentMaxWidth}px`
+      if (autoWidthToggle) autoWidthToggle.checked = isAutoWidth
+      if (textIndentSlider) textIndentSlider.value = String(textIndent)
+      if (textIndentValue) textIndentValue.textContent = `${textIndent}em`
+    }
+    initLayoutControls(prefs)
+
+    // 排版变更处理
+    function applyLayoutChange(key: keyof ThemePrefs, value: number | undefined) {
+      const cur = loadThemePrefs()
+      ;(cur as any)[key] = value
+      saveThemePrefs(cur)
+      applyThemePrefs(cur)
+      lastSaved = { ...cur }
+    }
+
+    if (lineHeightSlider) {
+      lineHeightSlider.addEventListener('input', () => {
+        const v = Number(lineHeightSlider.value)
+        if (lineHeightValue) lineHeightValue.textContent = String(v)
+        applyLayoutChange('lineHeight', v)
+      })
+    }
+    if (paragraphSpacingSlider) {
+      paragraphSpacingSlider.addEventListener('input', () => {
+        const v = Number(paragraphSpacingSlider.value)
+        if (paragraphSpacingValue) paragraphSpacingValue.textContent = `${v}em`
+        applyLayoutChange('paragraphSpacing', v)
+      })
+    }
+    if (contentWidthSlider) {
+      contentWidthSlider.addEventListener('input', () => {
+        if (autoWidthToggle?.checked) return
+        const v = Number(contentWidthSlider.value)
+        if (contentWidthValue) contentWidthValue.textContent = `${v}px`
+        applyLayoutChange('contentMaxWidth', v)
+      })
+    }
+    if (textIndentSlider) {
+      textIndentSlider.addEventListener('input', () => {
+        const v = Number(textIndentSlider.value)
+        if (textIndentValue) textIndentValue.textContent = `${v}em`
+        applyLayoutChange('textIndent', v === 0 ? undefined : v)
+      })
+    }
+    if (autoWidthToggle) {
+      autoWidthToggle.addEventListener('change', () => {
+        const isAuto = autoWidthToggle.checked
+        if (contentWidthSlider) contentWidthSlider.disabled = isAuto
+        if (contentWidthValue) contentWidthValue.textContent = isAuto ? '自适应' : `${contentWidthSlider?.value || 860}px`
+        applyLayoutChange('contentMaxWidth', isAuto ? 0 : Number(contentWidthSlider?.value || 860))
+      })
+    }
+    if (resetLayoutBtn) {
+      resetLayoutBtn.addEventListener('click', () => {
+        const cur = loadThemePrefs()
+        cur.lineHeight = undefined
+        cur.paragraphSpacing = undefined
+        cur.contentMaxWidth = undefined
+        cur.textIndent = undefined
+        saveThemePrefs(cur)
+        applyThemePrefs(cur)
+        initLayoutControls(cur)
+        lastSaved = { ...cur }
+      })
+    }
+
     // 简单的操作系统识别（仅用于选择系统字体目录）
     function detectOS(): 'windows' | 'mac' | 'linux' | 'other' {
       try {
@@ -1026,14 +1189,6 @@ export function initThemeUI(): void {
           else if (forWhich === 'read') cur.readBg = color
           else if (forWhich === 'wysiwyg') cur.wysiwygBg = color
         }
-        saveThemePrefs(cur)
-        applyThemePrefs(cur)
-        fillSwatches(panel!, cur)
-        lastSaved = { ...cur }
-      } else if (t.classList.contains('typo-btn')) {
-        const id = (t.dataset.typo as TypographyId) || 'default'
-        const cur = loadThemePrefs()
-        cur.typography = id
         saveThemePrefs(cur)
         applyThemePrefs(cur)
         fillSwatches(panel!, cur)

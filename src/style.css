@@ -828,22 +828,10 @@ body > .block-menu { display: none !important; }
   background: var(--table-row-hover);
 }
 .container.wysiwyg-v2 .ProseMirror:focus { outline: none; }
-.container.wysiwyg-v2 .ProseMirror p { margin: var(--layout-paragraph-spacing, 1em) 0; text-indent: var(--layout-text-indent, 0); }
-/* 排除 mermaid/代码块/SVG 等特殊元素的首行缩进 */
-.container.wysiwyg-v2 .ProseMirror .mermaid,
-.container.wysiwyg-v2 .ProseMirror .mermaid *,
-.container.wysiwyg-v2 .ProseMirror .mermaid-node-wrapper,
-.container.wysiwyg-v2 .ProseMirror .mermaid-node-wrapper *,
-.container.wysiwyg-v2 .ProseMirror .mermaid-chart-display,
-.container.wysiwyg-v2 .ProseMirror .mermaid-chart-display *,
-.container.wysiwyg-v2 .ProseMirror pre,
-.container.wysiwyg-v2 .ProseMirror pre *,
-.container.wysiwyg-v2 .ProseMirror code,
-.container.wysiwyg-v2 .ProseMirror table,
-.container.wysiwyg-v2 .ProseMirror table *,
-.container.wysiwyg-v2 .ProseMirror svg,
-.container.wysiwyg-v2 .ProseMirror svg * {
-  text-indent: 0 !important;
+.container.wysiwyg-v2 .ProseMirror p { margin: var(--layout-paragraph-spacing, 1em) 0; }
+/* 首行缩进：只对顶层段落生效，避免影响 mermaid/代码块等 */
+.container.wysiwyg-v2 .ProseMirror > p {
+  text-indent: var(--layout-text-indent, 0);
 }
 
 /* 所见模式标题样式 */
@@ -1559,23 +1547,10 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
   margin: var(--layout-paragraph-spacing, 1em) 0;
   text-align: justify;
   text-justify: inter-character;
-  text-indent: var(--layout-text-indent, 0);
 }
-/* 排除 mermaid/代码块/SVG 等特殊元素的首行缩进 */
-.preview .mermaid,
-.preview .mermaid *,
-.preview pre,
-.preview pre *,
-.preview code,
-.preview table,
-.preview table *,
-.preview svg,
-.preview svg *,
-.preview-body .mermaid,
-.preview-body .mermaid *,
-.preview-body svg,
-.preview-body svg * {
-  text-indent: 0 !important;
+/* 首行缩进：只对 preview-body 的直接子段落生效，避免影响 mermaid/代码块等 */
+.preview-body > p {
+  text-indent: var(--layout-text-indent, 0);
 }
 /* 预览模式代码样式在后面统一定义，这里暂时保留基础样式 */
 .preview blockquote {

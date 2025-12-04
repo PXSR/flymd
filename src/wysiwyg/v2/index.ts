@@ -1308,48 +1308,63 @@ function scheduleMathBlockReparse() {
     } catch {}
   }, 240)
 }
-function updateMilkdownMathFromDom(mathEl: HTMLElement, newValue: string) {
+function updateMilkdownMathFromDom(
+  mathEl: HTMLElement,
+  newValue: string,
+  insertParagraphAfter: boolean = false,
+  cachedFrom: number = -1,
+  cachedTo: number = -1
+): any {
   try {
     // 阻止 scheduleMathBlockReparse 重复处理
     _suppressMathReparse = true
     setTimeout(() => { _suppressMathReparse = false }, 500)
 
     const view: any = (_editor as any)?.ctx?.get?.(editorViewCtx)
-    if (!view || !mathEl) return
-    let pos: number | null = null
-    try { pos = view.posAtDOM(mathEl, 0) } catch {}
-    if (pos == null || typeof pos !== 'number') return
-    const state = view.state
-    const $pos = state.doc.resolve(pos)
-    const isMath = (n: any) => !!n && (n.type?.name === 'math_inline' || n.type?.name === 'math_block')
+    if (!view || !mathEl) return view
+
     const isBlock = (mathEl.dataset?.type === 'math_block' || mathEl.tagName === 'DIV')
     const targetType = isBlock ? 'math_block' : 'math_inline'
+    const isMath = (n: any) => !!n && (n.type?.name === 'math_inline' || n.type?.name === 'math_block')
 
-    // 更可靠的位置查找：向上遍历深度找到 math 节点
-    let from = -1, to = -1
-    for (let d = $pos.depth; d >= 0; d--) {
-      const node = $pos.node(d)
-      if (node.type?.name === targetType) {
-        from = $pos.before(d)
-        to = $pos.after(d)
-        break
+    let from = cachedFrom, to = cachedTo
+
+    // 如果没有缓存的位置，尝试动态查找
+    if (from < 0 || to < 0) {
+      let pos: number | null = null
+      try { pos = view.posAtDOM(mathEl, 0) } catch {}
+      if (pos == null || typeof pos !== 'number') return view
+      const state = view.state
+      const $pos = state.doc.resolve(pos)
+
+      // 向上遍历深度找到 math 节点
+      for (let d = $pos.depth; d >= 0; d--) {
+        const node = $pos.node(d)
+        if (node.type?.name === targetType) {
+          from = $pos.before(d)
+          to = $pos.after(d)
+          break
+        }
+      }
+      // 回退：检查 nodeAfter/nodeBefore
+      if (from < 0) {
+        if ($pos.nodeAfter && isMath($pos.nodeAfter)) {
+          from = pos
+          to = pos + $pos.nodeAfter.nodeSize
+        } else if ($pos.nodeBefore && isMath($pos.nodeBefore)) {
+          from = pos - $pos.nodeBefore.nodeSize
+          to = pos
+        }
       }
     }
-    // 回退：检查 nodeAfter/nodeBefore
-    if (from < 0) {
-      if ($pos.nodeAfter && isMath($pos.nodeAfter)) {
-        from = pos
-        to = pos + $pos.nodeAfter.nodeSize
-      } else if ($pos.nodeBefore && isMath($pos.nodeBefore)) {
-        from = pos - $pos.nodeBefore.nodeSize
-        to = pos
-      }
-    }
+
     // 仍未找到则不执行
     if (from < 0 || to < 0 || from === to) {
       console.warn('[updateMilkdownMathFromDom] 无法找到 math 节点位置')
-      return
+      return view
     }
+
+    const state = view.state
 
     const schema = state.schema
     let node: any
@@ -1361,11 +1376,29 @@ function updateMilkdownMathFromDom(mathEl: HTMLElement, newValue: string) {
       const text = schema.text(String(newValue || ''))
       node = t?.create?.({}, text)
     }
-    if (!node) return
-    const tr = state.tr.replaceRangeWith(from, to, node)
+    if (!node) return view
+
+    let tr = state.tr.replaceRangeWith(from, to, node)
+
+    // 如果需要在公式后插入新段落并移动光标
+    if (insertParagraphAfter && isBlock) {
+      const newMathEnd = from + node.nodeSize
+      const paragraphType = schema.nodes['paragraph']
+      if (paragraphType) {
+        const newPara = paragraphType.create()
+        tr = tr.insert(newMathEnd, newPara)
+        // 设置光标到新段落内部（newMathEnd + 1 是段落开始位置）
+        try {
+          tr = tr.setSelection(TextSelection.create(tr.doc, newMathEnd + 1))
+        } catch {}
+      }
+    }
+
     view.dispatch(tr.scrollIntoView())
+    return view
   } catch (e) {
     console.error('[updateMilkdownMathFromDom] 错误:', e)
+    return (_editor as any)?.ctx?.get?.(editorViewCtx)
   }
 }
 // 从图片 DOM 反向更新 Milkdown 文档中的 image 节点
@@ -1546,6 +1579,41 @@ function enterLatexSourceEdit(hitEl: HTMLElement) {
     const rawCode = (mathEl.dataset?.value || mathEl.textContent || '')
     const code = String(rawCode || '').trim()
     const ov = ensureOverlayHost()
+
+    // 缓存节点位置信息，避免 blur 时位置查找失败
+    const view: any = (_editor as any)?.ctx?.get?.(editorViewCtx)
+    let cachedFrom = -1, cachedTo = -1
+    if (view) {
+      try {
+        const pos = view.posAtDOM(mathEl, 0)
+        if (typeof pos === 'number') {
+          const state = view.state
+          const $pos = state.doc.resolve(pos)
+          const isMath = (n: any) => !!n && (n.type?.name === 'math_inline' || n.type?.name === 'math_block')
+          const isBlockType = (mathEl.dataset?.type === 'math_block' || mathEl.tagName === 'DIV')
+          const targetType = isBlockType ? 'math_block' : 'math_inline'
+          // 向上遍历深度找到 math 节点
+          for (let d = $pos.depth; d >= 0; d--) {
+            const node = $pos.node(d)
+            if (node.type?.name === targetType) {
+              cachedFrom = $pos.before(d)
+              cachedTo = $pos.after(d)
+              break
+            }
+          }
+          // 回退检查
+          if (cachedFrom < 0) {
+            if ($pos.nodeAfter && isMath($pos.nodeAfter)) {
+              cachedFrom = pos
+              cachedTo = pos + $pos.nodeAfter.nodeSize
+            } else if ($pos.nodeBefore && isMath($pos.nodeBefore)) {
+              cachedFrom = pos - $pos.nodeBefore.nodeSize
+              cachedTo = pos
+            }
+          }
+        }
+      } catch {}
+    }
     const hostRc = (_root as HTMLElement).getBoundingClientRect()
     const rc = mathEl.getBoundingClientRect()
     const hostWidth = hostRc.width || 0
@@ -1622,13 +1690,26 @@ function enterLatexSourceEdit(hitEl: HTMLElement) {
         const m = v.match(/^\s*\$([\s\S]*?)\$\s*$/)
         if (m) v = m[1]
       }
-      updateMilkdownMathFromDom(mathEl, v)
+      // 更新公式并在块级公式后插入新段落（使用缓存的位置信息）
+      const resultView = updateMilkdownMathFromDom(mathEl, v, isBlk, cachedFrom, cachedTo)
       try { ov?.removeChild(wrap) } catch {}
+      // 恢复编辑器焦点
+      if (resultView) {
+        setTimeout(() => {
+          try { resultView.focus() } catch {}
+        }, 50)
+      }
     }
 
     ta.addEventListener('keydown', (ev) => {
       const kev = ev as KeyboardEvent
-      if (kev.key === 'Escape') { try { ov?.removeChild(wrap) } catch {}; return }
+      if (kev.key === 'Escape') {
+        try { ov?.removeChild(wrap) } catch {}
+        // 恢复编辑器焦点
+        const view: any = (_editor as any)?.ctx?.get?.(editorViewCtx)
+        if (view) setTimeout(() => { try { view.focus() } catch {} }, 50)
+        return
+      }
       if (kev.key === 'Enter' && (kev.ctrlKey || kev.metaKey)) {
         kev.preventDefault()
         apply()

@@ -146,6 +146,8 @@ class MermaidNodeView implements NodeView {
   private toolbar: HTMLElement
   private isEditing: boolean = false  // 编辑模式标志，编辑时跳过渲染
   private justEnteredEdit: number = 0  // 防止双击后 clickOutside 立即关闭
+  // 空 mermaid 代码时的提示覆盖层
+  private hintOverlay: HTMLElement
 
   constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
     console.log('[Mermaid Plugin] 创建 NodeView, language:', node.attrs.language)
@@ -166,6 +168,22 @@ class MermaidNodeView implements NodeView {
     this.preWrapper.style.whiteSpace = 'pre'
     this.contentDOM = document.createElement('code')
     this.preWrapper.appendChild(this.contentDOM)
+
+    // 提示文本覆盖层：引导用户如何退出节点并触发渲染（不写入文档内容）
+    this.preWrapper.style.position = 'relative'
+    this.hintOverlay = document.createElement('div')
+    this.hintOverlay.textContent = 'Mermaid代码输入完毕后，使用Ctrl+Enter跳出节点。鼠标点击任意地方激活渲染'
+    this.hintOverlay.style.position = 'absolute'
+    this.hintOverlay.style.left = '8px'
+    this.hintOverlay.style.top = '6px'
+    this.hintOverlay.style.right = '8px'
+    this.hintOverlay.style.pointerEvents = 'none'
+    this.hintOverlay.style.opacity = '0.6'
+    this.hintOverlay.style.fontSize = '12px'
+    this.hintOverlay.style.lineHeight = '1.4'
+    this.hintOverlay.style.whiteSpace = 'normal'
+    this.hintOverlay.style.color = 'inherit'
+    this.preWrapper.appendChild(this.hintOverlay)
 
     // 编辑工具条：仅在源码编辑时显示删除按钮
     this.toolbar = document.createElement('div')
@@ -221,6 +239,7 @@ class MermaidNodeView implements NodeView {
       requestAnimationFrame(() => {
         this.renderChart()
       })
+      this.updateHintVisibility()
     }
 
     this.preWrapper.addEventListener('keydown', (e) => {
@@ -268,6 +287,9 @@ class MermaidNodeView implements NodeView {
     } else {
       this.renderChart()
     }
+
+    // 初始化提示可见性
+    this.updateHintVisibility()
   }
 
   private enterEditMode() {
@@ -285,6 +307,7 @@ class MermaidNodeView implements NodeView {
     this.preWrapper.style.color = dark ? '#d4d4d4' : '#1e1e1e'
     this.chartContainer.style.display = 'none'
     this.toolbar.style.display = 'block'
+    this.updateHintVisibility()
     // 聚焦到代码编辑区
     requestAnimationFrame(() => {
       try {
@@ -327,6 +350,9 @@ class MermaidNodeView implements NodeView {
 
     this.node = node
 
+    // 每次节点内容变更都更新提示可见性
+    this.updateHintVisibility()
+
     // 编辑模式下不渲染，等退出编辑模式后再渲染
     if (this.isEditing) {
       console.log('[Mermaid Plugin] 编辑模式中，跳过渲染')
@@ -342,6 +368,14 @@ class MermaidNodeView implements NodeView {
     try {
       document.removeEventListener('click', this.handleClickOutside)
     } catch {}
+  }
+
+  // 根据当前编辑状态与内容是否为空，控制提示文字是否显示
+  private updateHintVisibility() {
+    if (!this.hintOverlay) return
+    const code = this.node.textContent || ''
+    const shouldShow = this.isEditing && !code.trim()
+    this.hintOverlay.style.display = shouldShow ? 'block' : 'none'
   }
 
   private handleClickOutside = (e: Event) => {

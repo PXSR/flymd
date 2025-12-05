@@ -53,6 +53,7 @@ import pkg from '../package.json'
 import { initWebdavSync, openWebdavSyncDialog, getWebdavSyncConfig, isWebdavConfiguredForActiveLibrary, syncNow as webdavSyncNow, setOnSyncComplete, openSyncLog as webdavOpenSyncLog } from './extensions/webdavSync'
 // 平台适配层（Android 支持）
 import { initPlatformIntegration, mobileSaveFile, isMobilePlatform } from './platform-integration'
+import { createImageUploader } from './core/imageUpload'
 // 应用版本号（用于窗口标题/关于弹窗）
 const APP_VERSION: string = (pkg as any)?.version ?? '0.0.0'
 
@@ -4716,6 +4717,33 @@ async function fileToDataUrl(file: File): Promise<string> {
     }
   })
 }
+
+// 粘贴/拖拽上传核心模块包装
+const _imageUploader = createImageUploader({
+  getEditorValue: () => editor.value,
+  setEditorValue: (v: string) => { editor.value = v },
+  getMode: () => mode,
+  isWysiwyg: () => !!wysiwyg,
+  renderPreview: () => { void renderPreview() },
+  scheduleWysiwygRender: () => { try { scheduleWysiwygRender() } catch {} },
+  markDirtyAndRefresh: () => {
+    dirty = true
+    refreshTitle()
+    refreshStatus()
+  },
+  insertAtCursor: (text: string) => insertAtCursor(text),
+  getCurrentFilePath: () => currentFilePath,
+  isTauriRuntime: () => isTauriRuntime(),
+  ensureDir: async (dir: string) => { try { await ensureDir(dir) } catch {} },
+  getDefaultPasteDir: () => getDefaultPasteDir(),
+  getUserPicturesDir: () => getUserPicturesDir(),
+  getAlwaysSaveLocalImages: () => getAlwaysSaveLocalImages(),
+  getUploaderConfig: () => getUploaderConfig(),
+  getTranscodePrefs: () => getTranscodePrefs(),
+  writeBinaryFile: async (path: string, bytes: Uint8Array) => { await writeFile(path as any, bytes as any) },
+  fileToDataUrl: (f: File) => fileToDataUrl(f),
+  transcodeToWebpIfNeeded: (blob, fname, quality, opts) => transcodeToWebpIfNeeded(blob, fname, quality, opts),
+})
 
 // 运行时环境检测（是否在 Tauri 中）
 function isTauriRuntime(): boolean {
@@ -10826,8 +10854,8 @@ function bindEvents() {
       const rand = Math.random().toString(36).slice(2, 6)
       const fname = `pasted-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}-${rand}.${ext}`
 
-      // 占位符 + 异步上传，不阻塞编辑
-      await startAsyncUploadFromFile(file, fname)
+      // 占位符 + 异步上传，不阻塞编辑（已拆分到 core/imageUpload）
+      await _imageUploader.startAsyncUploadFromFile(file, fname)
       return
       // 若开启直连上传（S3/R2），优先尝试上传，成功则直接插入外链并返回
       try {
@@ -10843,7 +10871,7 @@ function bindEvents() {
         console.warn('直连上传失败，改用本地保存/内联', e)
       }
 
-      await startAsyncUploadFromFile(file, fname)
+      await _imageUploader.startAsyncUploadFromFile(file, fname)
     } catch (err) {
       showError('处理粘贴图片失败', err)
     }
@@ -11738,103 +11766,8 @@ async function getUserPicturesDir(): Promise<string | null> {
 }
 
 function startAsyncUploadFromBlob(blob: Blob, fname: string, mime: string): Promise<void> {
-  const id = genUploadId()
-  insertAtCursor(`![${fname || 'image'}](uploading://${id})`)
-  void (async () => {
-    try {
-      const alwaysLocal = await getAlwaysSaveLocalImages()
-      if (alwaysLocal) {
-        try {
-          if (isTauriRuntime() && currentFilePath) {
-            const base = currentFilePath.replace(/[\\/][^\\/]*$/, '')
-            const sep = base.includes('\\') ? '\\' : '/'
-            const imgDir = base + sep + 'images'
-            try { await ensureDir(imgDir) } catch {}
-            // 根据偏好决定是否转为 WebP 再本地保存
-            const { saveLocalAsWebp, webpQuality } = await getTranscodePrefs()
-            let blobForSave: Blob = blob
-            let nameForSave: string = fname
-            try {
-              if (saveLocalAsWebp) {
-                const r = await transcodeToWebpIfNeeded(blob, fname, webpQuality, { skipAnimated: true })
-                blobForSave = r.blob
-                nameForSave = r.fileName
-              }
-            } catch {}
-            const dst = imgDir + sep + nameForSave
-            try {
-              const bytes = new Uint8Array(await blobForSave.arrayBuffer())
-              await writeFile(dst as any, bytes as any)
-              const needAngle = /[\s()]/.test(dst) || /^[a-zA-Z]:/.test(dst) || /\\/.test(dst)
-              const mdUrl = needAngle ? `<${dst}>` : dst
-              replaceUploadingPlaceholder(id, `![${nameForSave}](${mdUrl})`)
-              return
-            } catch {}
-          }
-        } catch {}
-        try {
-          if (isTauriRuntime() && !currentFilePath) {
-            const dir = await getDefaultPasteDir()
-            if (dir) {
-              const baseDir = dir.replace(/[\\/]+$/, '')
-              const sep = baseDir.includes('\\') ? '\\' : '/'
-              const { saveLocalAsWebp, webpQuality } = await getTranscodePrefs()
-              let blobForSave: Blob = blob
-              let nameForSave: string = fname
-              try {
-                if (saveLocalAsWebp) {
-                  const r = await transcodeToWebpIfNeeded(blob, fname, webpQuality, { skipAnimated: true })
-                  blobForSave = r.blob
-                  nameForSave = r.fileName
-                }
-              } catch {}
-              const dst = baseDir + sep + nameForSave
-              try {
-                const bytes = new Uint8Array(await blobForSave.arrayBuffer())
-                try { await ensureDir(baseDir) } catch {}
-                await writeFile(dst as any, bytes as any)
-                const needAngle = /[\s()]/.test(dst) || /^[a-zA-Z]:/.test(dst) || /\\/.test(dst)
-                const mdUrl = needAngle ? `<${dst}>` : dst
-                replaceUploadingPlaceholder(id, `![${nameForSave}](${mdUrl})`)
-                return
-              } catch {}
-            }
-          }
-        } catch {}
-        try {
-          const f = new File([blob], fname, { type: mime || 'application/octet-stream' })
-          const dataUrl = await fileToDataUrl(f)
-          replaceUploadingPlaceholder(id, `![${fname}](${dataUrl})`)
-          return
-        } catch {}
-      }
-    } catch {}
-    try {
-      const upCfg = await getUploaderConfig()
-      if (upCfg) {
-        let blob2: Blob = blob
-        let name2: string = fname
-        let mime2: string = mime || 'application/octet-stream'
-        try {
-          if (upCfg?.convertToWebp) {
-            const r = await transcodeToWebpIfNeeded(blob, fname, upCfg.webpQuality ?? 0.85, { skipAnimated: true })
-            blob2 = r.blob
-            name2 = r.fileName
-            mime2 = r.type || 'image/webp'
-          }
-        } catch {}
-        const res = await uploadImageToS3R2(blob2, name2, mime2, upCfg)
-        replaceUploadingPlaceholder(id, `![${name2}](${res.publicUrl})`)
-        return
-      }
-    } catch {}
-    try {
-      const f = new File([blob], fname, { type: mime || 'application/octet-stream' })
-      const dataUrl = await fileToDataUrl(f)
-      replaceUploadingPlaceholder(id, `![${fname}](${dataUrl})`)
-    } catch {}
-  })()
-  return Promise.resolve()
+  // NOTE: Blob 版本目前只被内部调用，保持向后兼容但委托给核心上传模块
+  return _imageUploader.startAsyncUploadFromBlob(blob, fname, mime)
 }
 // ========= END =========
 

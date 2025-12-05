@@ -11477,9 +11477,11 @@ function bindEvents() {
       const SOURCEMODE_DEFAULT_KEY = 'flymd:sourcemode:default'
       const wysiwygDefault = localStorage.getItem(WYSIWYG_DEFAULT_KEY) === 'true'
       const sourcemodeDefault = localStorage.getItem(SOURCEMODE_DEFAULT_KEY) === 'true'
+      const hasCurrentPdf = !!(currentFilePath && currentFilePath.toLowerCase().endsWith('.pdf'))
 
-      // 若同时存在旧数据冲突，以“源码模式默认”为优先，确保语义明确
-      const shouldEnableWysiwyg = wysiwygDefault && !sourcemodeDefault
+      // 若同时存在旧数据冲突，以“源码模式默认”为优先，确保语义明确；
+      // 但若启动时已通过“打开方式”直接打开的是 PDF，则不要在这里强制切到所见模式，避免覆盖 PDF 预览。
+      const shouldEnableWysiwyg = wysiwygDefault && !sourcemodeDefault && !hasCurrentPdf
 
       if (shouldEnableWysiwyg && !wysiwyg && !stickyNoteMode) {
         // 延迟一小段时间，确保编辑器已完全初始化

@@ -85,6 +85,10 @@ import {
   type StickyNoteWindowHost,
 } from './modes/stickyNoteHost'
 import {
+  initFocusModeEventsImpl,
+  updateFocusSidebarBgImpl,
+} from './modes/focusModeUi'
+import {
   ensurePluginsDir,
   parseRepoInput,
   compareVersions,
@@ -481,9 +485,6 @@ let selectedNodeEl: HTMLElement | null = null
   let outlineLayout: OutlineLayout = 'embedded'
 // 非固定模式下：离开侧栏后自动隐藏的延迟定时器
 let _libLeaveTimer: number | null = null
-// 专注模式：隐藏顶栏，鼠标移到顶部边缘时显示
-let _focusTitlebarShowTimer: number | null = null
-let _focusTitlebarHideTimer: number | null = null
 // 便签模式：专注+阅读+无侧栏，顶部显示锁定/置顶按钮
 let stickyNoteMode = false
 let stickyNoteLocked = false   // 窗口位置锁定（禁止拖动）
@@ -5394,105 +5395,19 @@ async function getLibrarySide(): Promise<LibrarySide> {
 // 隐藏顶栏，鼠标移到顶部边缘时自动显示
 
 function initFocusModeEvents() {
-  const triggerZone = document.getElementById('focus-trigger-zone')
-  const titlebar = document.querySelector('.titlebar') as HTMLElement | null
-  if (!triggerZone || !titlebar) return
-
-  // 鼠标进入顶部触发区域：延迟显示 titlebar
-  triggerZone.addEventListener('mouseenter', () => {
-    if (!isFocusModeEnabled()) return
-    if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
-    if (_focusTitlebarShowTimer) return
-    _focusTitlebarShowTimer = window.setTimeout(() => {
-      _focusTitlebarShowTimer = null
-      if (isFocusModeEnabled()) titlebar.classList.add('show')
-    }, 150)
-  })
-
-  // 鼠标进入 titlebar：保持显示
-  titlebar.addEventListener('mouseenter', () => {
-    if (!isFocusModeEnabled()) return
-    if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
-    if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
-    titlebar.classList.add('show')
-  })
-
-  // 鼠标离开 titlebar：延迟隐藏
-  titlebar.addEventListener('mouseleave', () => {
-    if (!isFocusModeEnabled()) return
-    if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
-    if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
-    _focusTitlebarHideTimer = window.setTimeout(() => {
-      _focusTitlebarHideTimer = null
-      if (isFocusModeEnabled() && !titlebar.matches(':hover')) titlebar.classList.remove('show')
-    }, 300)
-  })
-
-  // 窗口大小变化时（最大化/还原）：检查并隐藏 titlebar
-  window.addEventListener('resize', () => {
-    if (!isFocusModeEnabled()) return
-    // 清除所有计时器
-    if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
-    if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
-    // 延迟检查，等待窗口状态稳定
-      _focusTitlebarHideTimer = window.setTimeout(() => {
-      _focusTitlebarHideTimer = null
-      if (isFocusModeEnabled() && !titlebar.matches(':hover') && !triggerZone.matches(':hover')) {
-        titlebar.classList.remove('show')
-      }
-    }, 200)
-  })
-
-  // 监听来自主题面板开关的专注模式切换事件
-  window.addEventListener('flymd:focus:toggle', async (ev: Event) => {
-      const detail = (ev as CustomEvent).detail || {}
-      const enabled = !!detail.enabled
-      setFocusModeFlag(enabled)
-      // 如果退出专注模式，确保 titlebar 可见
-      if (!isFocusModeEnabled()) {
-        titlebar.classList.remove('show')
-      }
-      // 更新侧栏背景色
-      updateFocusSidebarBg()
-    })
-
-  // 所见模式默认开关：主题面板勾选后，立即同步当前模式并持久化
-  window.addEventListener('flymd:wysiwyg:default', async (ev: Event) => {
-    try {
-      const detail = (ev as CustomEvent).detail || {}
-      const enabled = !!detail.enabled
-      // 便签模式下不自动切换所见模式，避免与简化界面冲突
-      if (stickyNoteMode) return
-      if (enabled !== wysiwyg) {
-        await setWysiwygEnabled(enabled)
-      }
-    } catch {}
-  })
-
-  // 源码模式默认开关：主题面板勾选后，立即切换当前模式
-  window.addEventListener('flymd:sourcemode:default', async (ev: Event) => {
-    try {
-      const detail = (ev as CustomEvent).detail || {}
-      const enabled = !!detail.enabled
-
-      // 便签模式下不自动切换
-      if (stickyNoteMode) return
-
-      if (enabled) {
-        // 启用源码模式：切换到 edit 模式，关闭所见模式
-        if (wysiwyg) {
-          await setWysiwygEnabled(false)
-        }
-        if (mode !== 'edit') {
-          mode = 'edit'
-          // 刷新UI
-          try { preview.classList.add('hidden') } catch {}
-          try { syncToggleButton() } catch {}
-          try { notifyModeChange() } catch {}
-        }
-      }
-      // 如果禁用源码模式，不做任何操作（保持当前模式）
-    } catch {}
+  // 将 DOM 事件绑定的具体实现拆分到 modes/focusModeUi.ts，降低 main.ts 复杂度
+  initFocusModeEventsImpl({
+    isFocusModeEnabled,
+    setFocusModeFlag,
+    getMode: () => mode,
+    setMode: (m) => { mode = m },
+    getWysiwyg: () => wysiwyg,
+    setWysiwygEnabled,
+    getStickyNoteMode: () => stickyNoteMode,
+    getPreviewElement: () => preview,
+    syncToggleButton: () => { try { syncToggleButton() } catch {} },
+    notifyModeChange: () => { try { notifyModeChange() } catch {} },
+    updateFocusSidebarBg: () => { try { updateFocusSidebarBg() } catch {} },
   })
 }
 
@@ -5639,85 +5554,11 @@ function initWindowResize() {
 
 // 更新专注模式下侧栏背景色：跟随编辑区背景色和网格设置
 function updateFocusSidebarBg() {
-  const library = document.querySelector('.library') as HTMLElement | null
-  if (!library) return
-
-  // 如果不是专注模式，移除自定义背景色和网格，使用默认
-  if (!isFocusModeEnabled()) {
-    library.style.removeProperty('background')
-    library.style.removeProperty('background-image')
-    library.style.removeProperty('background-size')
-    library.style.removeProperty('background-position')
-    const header = library.querySelector('.lib-header') as HTMLElement | null
-    if (header) {
-      header.style.removeProperty('background')
-      header.style.removeProperty('background-image')
-      header.style.removeProperty('background-size')
-      header.style.removeProperty('background-position')
-    }
-    return
-  }
-
-  // 专注模式下，获取编辑区的实际背景色
-  let bgColor = '#ffffff' // 默认白色
-  let hasGrid = false
-
-  // 检查容器是否有网格背景
-  const container = document.querySelector('.container') as HTMLElement | null
-  if (container) {
-    hasGrid = container.classList.contains('edit-grid-bg')
-
-    // 根据当前模式获取对应的背景色
-    const computedStyle = window.getComputedStyle(container)
-
-    // 优先获取容器的背景色
-    const containerBg = computedStyle.backgroundColor
-    if (containerBg && containerBg !== 'transparent' && containerBg !== 'rgba(0, 0, 0, 0)') {
-      bgColor = containerBg
-    }
-  }
-
-  // 如果容器背景色无效，尝试从编辑器获取
-  const editor = document.querySelector('.editor') as HTMLElement | null
-  if (editor && bgColor === '#ffffff') {
-    const computedStyle = window.getComputedStyle(editor)
-    const editorBg = computedStyle.backgroundColor
-    // 如果获取到有效的背景色（不是透明），使用它
-    if (editorBg && editorBg !== 'transparent' && editorBg !== 'rgba(0, 0, 0, 0)') {
-      bgColor = editorBg
-    }
-  }
-
-  const header = library.querySelector('.lib-header') as HTMLElement | null
-
-  // 应用背景色到库侧栏
-  if (hasGrid && mode === 'edit' && !wysiwyg) {
-    // 只在源码模式（非所见）下应用网格背景
-    library.style.background = bgColor
-    library.style.backgroundImage = 'linear-gradient(rgba(127,127,127,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(127,127,127,0.08) 1px, transparent 1px)'
-    library.style.backgroundSize = '20px 20px'
-    library.style.backgroundPosition = '-1px -1px'
-
-    if (header) {
-      header.style.background = 'transparent'
-      header.style.backgroundImage = 'none'
-      header.style.backgroundSize = 'unset'
-      header.style.backgroundPosition = 'unset'
-    }
-  } else {
-    // 没有网格或不是源码模式，只应用纯色背景
-    library.style.background = bgColor
-    library.style.removeProperty('background-image')
-    library.style.removeProperty('background-size')
-    library.style.removeProperty('background-position')
-
-    if (header) {
-      header.style.background = bgColor
-      header.style.removeProperty('background-image')
-      header.style.removeProperty('background-size')
-      header.style.removeProperty('background-position')
-    }
-  }
+  updateFocusSidebarBgImpl({
+    isFocusModeEnabled,
+    getMode: () => mode,
+    getWysiwyg: () => wysiwyg,
+  })
 }
 
 // 便签配置宿主：封装配置读写与外观控制

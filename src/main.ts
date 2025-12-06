@@ -50,6 +50,17 @@ import { normSep, isInside, ensureDir, moveFileSafe, renameFileSafe } from './co
 import { getLibrarySort, setLibrarySort, type LibSortMode } from './core/librarySort'
 import { createCustomTitleBar, removeCustomTitleBar, applyWindowDecorationsCore } from './modes/focusMode'
 import {
+  toggleFocusMode,
+  getFocusMode,
+  getCompactTitlebar,
+  setCompactTitlebar,
+  isFocusModeEnabled,
+  isCompactTitlebarEnabled,
+  setFocusModeFlag,
+  syncCustomTitlebarPlacement,
+  resetFocusModeDecorations,
+} from './modes/focusModeHost'
+import {
   type StickyNoteColor,
   type StickyNoteReminderMap,
   type StickyNotePrefs,
@@ -454,11 +465,8 @@ let selectedNodeEl: HTMLElement | null = null
 // 非固定模式下：离开侧栏后自动隐藏的延迟定时器
 let _libLeaveTimer: number | null = null
 // 专注模式：隐藏顶栏，鼠标移到顶部边缘时显示
-let focusMode = false
 let _focusTitlebarShowTimer: number | null = null
 let _focusTitlebarHideTimer: number | null = null
-// 紧凑标题栏：隐藏原生窗口标题栏，在应用内使用自绘控制按钮
-let compactTitlebar = false
 // 便签模式：专注+阅读+无侧栏，顶部显示锁定/置顶按钮
 let stickyNoteMode = false
 let stickyNoteLocked = false   // 窗口位置锁定（禁止拖动）
@@ -1218,6 +1226,13 @@ try { initPlatformClass() } catch {}
 // 应用已保存主题并挂载主题 UI
 try { applySavedTheme() } catch {}
 try { initThemeUI() } catch {}
+// 将专注模式切换函数暴露到全局，供主题面板调用
+;(window as any).flymdToggleFocusMode = async (enabled: boolean) => {
+  try {
+    await toggleFocusMode(enabled)
+    try { updateFocusSidebarBg() } catch {}
+  } catch {}
+}
 // 初始化专注模式事件
 try { initFocusModeEvents() } catch {}
 // 初始化窗口拖拽（为 mac / Linux 上的紧凑标题栏补齐拖动支持）
@@ -5099,15 +5114,6 @@ function syncLibraryFloatToggle() {
   } catch {}
 }
 
-  function syncCustomTitlebarPlacement() {
-  try {
-    const titleBar = document.getElementById('custom-titlebar') as HTMLDivElement | null
-    if (!titleBar) return
-    const controlsLeft = focusMode && librarySide === 'right'
-    titleBar.classList.toggle('controls-left', controlsLeft)
-  } catch {}
-}
-
   // 根据当前大纲布局模式应用布局（大纲剥离/嵌入）
   function applyOutlineLayout() {
     try {
@@ -5363,70 +5369,6 @@ async function getLibrarySide(): Promise<LibrarySide> {
 // ========== 专注模式（Focus Mode）==========
 // 隐藏顶栏，鼠标移到顶部边缘时自动显示
 
-async function toggleFocusMode(enabled?: boolean) {
-  focusMode = enabled !== undefined ? enabled : !focusMode
-  document.body.classList.toggle('focus-mode', focusMode)
-
-  // 专注模式：启用自定义标题栏；普通模式：移除，仅保留紧凑标题栏按钮
-  try {
-    if (focusMode) {
-      createCustomTitleBar({
-        getCurrentWindow,
-        onExitFocus: () => toggleFocusMode(false),
-      })
-    } else {
-      removeCustomTitleBar()
-    }
-    await applyWindowDecorationsCore(getCurrentWindow, focusMode, compactTitlebar)
-    try { syncCustomTitlebarPlacement() } catch {}
-  } catch {}
-
-  // 如果退出专注模式，确保 titlebar 可见
-  if (!focusMode) {
-    const titlebar = document.querySelector('.titlebar') as HTMLElement | null
-    if (titlebar) titlebar.classList.remove('show')
-  }
-  // 更新侧栏背景色
-  try { updateFocusSidebarBg() } catch {}
-}
-
-// 将 toggleFocusMode 暴露到全局，供 theme.ts 调用
-;(window as any).flymdToggleFocusMode = toggleFocusMode
-
-async function getFocusMode(): Promise<boolean> {
-  try { if (!store) return focusMode; const v = await store.get('focusMode'); return !!v } catch { return focusMode }
-}
-
-// 紧凑标题栏：使用 Store 持久化，并通过 body 类与窗口装饰体现
-async function getCompactTitlebar(): Promise<boolean> {
-  try {
-    if (!store) return compactTitlebar
-    const v = await store.get('compactTitlebar')
-    return !!v
-  } catch {
-    return compactTitlebar
-  }
-}
-
-async function setCompactTitlebar(enabled: boolean, persist = true): Promise<void> {
-  compactTitlebar = !!enabled
-  try { document.body.classList.toggle('compact-titlebar', compactTitlebar) } catch {}
-  if (persist && store) {
-    try {
-      await store.set('compactTitlebar', compactTitlebar)
-      await store.save()
-    } catch {}
-  }
-  try { await applyWindowDecorationsCore(getCurrentWindow, focusMode, compactTitlebar) } catch {}
-}
-
-// 暴露给主题面板调用
-;(window as any).flymdSetCompactTitlebar = async (enabled: boolean) => {
-  try {
-    await setCompactTitlebar(enabled, true)
-  } catch {}
-}
-
 function initFocusModeEvents() {
   const triggerZone = document.getElementById('focus-trigger-zone')
   const titlebar = document.querySelector('.titlebar') as HTMLElement | null
@@ -5434,18 +5376,18 @@ function initFocusModeEvents() {
 
   // 鼠标进入顶部触发区域：延迟显示 titlebar
   triggerZone.addEventListener('mouseenter', () => {
-    if (!focusMode) return
+    if (!isFocusModeEnabled()) return
     if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
     if (_focusTitlebarShowTimer) return
     _focusTitlebarShowTimer = window.setTimeout(() => {
       _focusTitlebarShowTimer = null
-      if (focusMode) titlebar.classList.add('show')
+      if (isFocusModeEnabled()) titlebar.classList.add('show')
     }, 150)
   })
 
   // 鼠标进入 titlebar：保持显示
   titlebar.addEventListener('mouseenter', () => {
-    if (!focusMode) return
+    if (!isFocusModeEnabled()) return
     if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
     if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
     titlebar.classList.add('show')
@@ -5453,25 +5395,25 @@ function initFocusModeEvents() {
 
   // 鼠标离开 titlebar：延迟隐藏
   titlebar.addEventListener('mouseleave', () => {
-    if (!focusMode) return
+    if (!isFocusModeEnabled()) return
     if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
     if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
     _focusTitlebarHideTimer = window.setTimeout(() => {
       _focusTitlebarHideTimer = null
-      if (focusMode && !titlebar.matches(':hover')) titlebar.classList.remove('show')
+      if (isFocusModeEnabled() && !titlebar.matches(':hover')) titlebar.classList.remove('show')
     }, 300)
   })
 
   // 窗口大小变化时（最大化/还原）：检查并隐藏 titlebar
   window.addEventListener('resize', () => {
-    if (!focusMode) return
+    if (!isFocusModeEnabled()) return
     // 清除所有计时器
     if (_focusTitlebarShowTimer) { clearTimeout(_focusTitlebarShowTimer); _focusTitlebarShowTimer = null }
     if (_focusTitlebarHideTimer) { clearTimeout(_focusTitlebarHideTimer); _focusTitlebarHideTimer = null }
     // 延迟检查，等待窗口状态稳定
-    _focusTitlebarHideTimer = window.setTimeout(() => {
+      _focusTitlebarHideTimer = window.setTimeout(() => {
       _focusTitlebarHideTimer = null
-      if (focusMode && !titlebar.matches(':hover') && !triggerZone.matches(':hover')) {
+      if (isFocusModeEnabled() && !titlebar.matches(':hover') && !triggerZone.matches(':hover')) {
         titlebar.classList.remove('show')
       }
     }, 200)
@@ -5481,9 +5423,9 @@ function initFocusModeEvents() {
   window.addEventListener('flymd:focus:toggle', async (ev: Event) => {
       const detail = (ev as CustomEvent).detail || {}
       const enabled = !!detail.enabled
-      focusMode = enabled
+      setFocusModeFlag(enabled)
       // 如果退出专注模式，确保 titlebar 可见
-      if (!focusMode) {
+      if (!isFocusModeEnabled()) {
         titlebar.classList.remove('show')
       }
       // 更新侧栏背景色
@@ -5563,7 +5505,7 @@ function initWindowDrag() {
     if (ev.button !== 0) return
     // 便签锁定或未开启紧凑/专注标题栏时，不处理拖动
     if (stickyNoteLocked) return
-    if (!(compactTitlebar || focusMode || stickyNoteMode)) return
+    if (!(isCompactTitlebarEnabled() || isFocusModeEnabled() || stickyNoteMode)) return
     if (shouldIgnoreTarget(ev.target)) return
     try {
       const win = getCurrentWindow()
@@ -5677,7 +5619,7 @@ function updateFocusSidebarBg() {
   if (!library) return
 
   // 如果不是专注模式，移除自定义背景色和网格，使用默认
-  if (!focusMode) {
+  if (!isFocusModeEnabled()) {
     library.style.removeProperty('background')
     library.style.removeProperty('background-image')
     library.style.removeProperty('background-size')
@@ -5756,7 +5698,7 @@ function updateFocusSidebarBg() {
 
 // 监听模式切换事件，更新专注模式侧栏背景和外圈UI颜色
 window.addEventListener('flymd:mode:changed', (ev: Event) => {
-  updateFocusSidebarBg()
+  try { updateFocusSidebarBg() } catch {}
   // 更新外圈UI颜色（标题栏、侧栏等）跟随当前模式背景
   try {
     const detail = (ev as CustomEvent).detail || {}
@@ -5792,7 +5734,9 @@ window.addEventListener('flymd:darkmode:changed', async () => {
 })
 
 // 暴露 updateFocusSidebarBg 到全局，供其他模块调用
-;(window as any).updateFocusSidebarBg = updateFocusSidebarBg
+;(window as any).updateFocusSidebarBg = () => {
+  try { updateFocusSidebarBg() } catch {}
+}
 
 // ========== 专注模式结束 ==========
 
@@ -6572,17 +6516,7 @@ async function centerWindow(): Promise<void> {
 }
 
 // 兜底：强制退出专注模式，恢复原生标题栏（等价于“手动切换一次专注模式再切回来”的效果）
-async function resetFocusModeDecorations(): Promise<void> {
-  try {
-    focusMode = false
-    document.body.classList.remove('focus-mode')
-    try { removeCustomTitleBar() } catch {}
-    try {
-      await applyWindowDecorationsCore(getCurrentWindow, focusMode, compactTitlebar)
-      try { syncCustomTitlebarPlacement() } catch {}
-    } catch {}
-  } catch {}
-}
+// 已迁移到 modes/focusModeHost.ts：此处仅保留引用（函数签名不变）
 
 async function pickLibraryRoot(): Promise<string | null> {
   try {

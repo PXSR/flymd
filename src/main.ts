@@ -88,6 +88,7 @@ import {
   type PluginUpdateState,
 } from './extensions/runtime'
 import { initPluginsMenu, addToPluginsMenu, removeFromPluginsMenu, togglePluginDropdown } from './extensions/pluginMenu'
+import { initExtensionsPanel, refreshExtensionsUI as panelRefreshExtensionsUI, showExtensionsOverlay as panelShowExtensionsOverlay } from './extensions/extensionsPanel'
 import {
   removeContextMenu,
   showContextMenu,
@@ -101,6 +102,7 @@ const APP_VERSION: string = (pkg as any)?.version ?? '0.0.0'
 // UI 缩放与预览宽度（已拆分到 core/uiZoom.ts）
 import { getUiZoom, setUiZoom, applyUiZoom, zoomIn, zoomOut, zoomReset, getPreviewWidth, setPreviewWidth, applyPreviewWidth, resetPreviewWidth, PREVIEW_WIDTH_STEP } from './core/uiZoom'
 import { showZoomBubble, showWidthBubble, NotificationManager, showModeChangeNotification, updateSyncStatus } from './core/uiNotifications'
+import type { NotificationType } from './core/uiNotifications'
 
 // 滚动条自动隐藏
 import { initAutoHideScrollbar, rescanScrollContainers } from './core/scrollbar'
@@ -637,15 +639,6 @@ const pluginMenuAdded = new Map<string, boolean>() // 限制每个插件仅添�
 // 插件 API 注册表：namespace -> { pluginId, api }
 type PluginAPIRecord = { pluginId: string; api: any }
 const pluginAPIRegistry = new Map<string, PluginAPIRecord>()
-let _extOverlayEl: HTMLDivElement | null = null
-let _extListHost: HTMLDivElement | null = null
-let _extInstallInput: HTMLInputElement | null = null
-let _extMarketSearchText = ''
-let _extLastMarketItems: InstallableItem[] = []
-let _extUpdatesOnly = false  // 是否仅显示可更新扩展（已安装区块过滤）
-let _extGlobalOrder: Record<string, number> = {} // 扩展卡片的统一排序顺序（与安装状态无关）
-let _extOverlayRenderedOnce = false  // 扩展面板是否已完成过首次渲染（用于避免每次打开都全量刷新）
-let _extApplyMarketFilter: ((itemsOverride?: InstallableItem[] | null) => Promise<void>) | null = null  // 背景静默更新市场列表时复用的过滤函数
 
 // 右键菜单管理
 const pluginContextMenuItems: PluginContextMenuItem[] = [] // 所有插件注册的右键菜单项
@@ -7641,7 +7634,7 @@ function applyI18nUi() {
         const btnInstall = extOverlay.querySelector('#ext-install-btn') as HTMLButtonElement | null
         if (btnInstall) btnInstall.textContent = t('ext.install.btn')
         // 列表区域走 refresh 重建，确保按钮文本（设置/启用/禁用/移除/刷新）也同步
-        void refreshExtensionsUI()
+        void panelRefreshExtensionsUI()
       }
     } catch {}
     // WebDAV 同步窗口（若已创建）：仅更新标题与按钮
@@ -9772,6 +9765,28 @@ function bindEvents() {
 
     // 尝试初始化存储（确保完成后再加载扩展，避免读取不到已安装列表）
     await initStore()
+    // 初始化扩展管理面板宿主（依赖 store 等全局状态）
+    try {
+      initExtensionsPanel({
+        getStore: () => store,
+        pluginNotice,
+        showError,
+        confirmNative: (message: string) => confirmNative(message),
+        openUploaderDialog,
+        openWebdavSyncDialog,
+        getWebdavSyncConfig,
+        openInBrowser: (url: string) => openUrl(url),
+        installPluginFromGit,
+        installPluginFromLocal,
+        activatePlugin,
+        deactivatePlugin,
+        getActivePluginModule: (id: string) => activePlugins.get(id),
+        coreAiExtensionId: CORE_AI_EXTENSION_ID,
+        markCoreExtensionBlocked,
+        removePluginDir: (dir: string) => removeDirRecursive(dir),
+        openPluginSettings,
+      })
+    } catch {}
     try {
       const layout = await getOutlineLayout()
       outlineLayout = layout
@@ -9809,7 +9824,7 @@ function bindEvents() {
     performance.mark('flymd-first-render')
 
     // 绑定扩展按钮（立即绑定，但延迟加载扩展）
-    try { const btnExt = document.getElementById('btn-extensions'); if (btnExt) btnExt.addEventListener('click', () => { void showExtensionsOverlay(true) }) } catch {}
+    try { const btnExt = document.getElementById('btn-extensions'); if (btnExt) btnExt.addEventListener('click', () => { void panelShowExtensionsOverlay(true) }) } catch {}
 
     // 延迟初始化扩展系统和 WebDAV（使用 requestIdleCallback）
     const ric: any = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 100))
@@ -10741,6 +10756,79 @@ async function deactivatePlugin(id: string): Promise<void> {
   } catch {}
 }
 
+// 打开插件设置：供扩展面板通过宿主调用
+async function openPluginSettings(p: InstalledPlugin): Promise<void> {
+  try {
+    const mod = activePlugins.get(p.id)
+    const http = await getHttpClient()
+    const ctx = {
+      http,
+      invoke,
+      storage: {
+        get: async (key: string) => {
+          try {
+            if (!store) return null
+            const all = (await store.get('plugin:' + p.id)) as any || {}
+            return all[key]
+          } catch {
+            return null
+          }
+        },
+        set: async (key: string, value: any) => {
+          try {
+            if (!store) return
+            const all = (await store.get('plugin:' + p.id)) as any || {}
+            all[key] = value
+            await store.set('plugin:' + p.id, all)
+            await store.save()
+          } catch {}
+        }
+      },
+      ui: {
+        notice: (msg: string, level?: 'ok' | 'err', ms?: number) => pluginNotice(msg, level, ms),
+        showNotification: (message: string, options?: { type?: 'success' | 'error' | 'info', duration?: number, onClick?: () => void }) => {
+          try {
+            const opt = options || {}
+            let notifType: NotificationType = 'plugin-success'
+            if (opt.type === 'error') notifType = 'plugin-error'
+            else if (opt.type === 'info') notifType = 'extension'
+            else notifType = 'plugin-success'
+            return NotificationManager.show(notifType, message, opt.duration, opt.onClick)
+          } catch (err) {
+            console.error('[Plugin] showNotification 失败', err)
+            return ''
+          }
+        },
+        hideNotification: (id: string) => {
+          try {
+            NotificationManager.hide(id)
+          } catch (err) {
+            console.error('[Plugin] hideNotification 失败', err)
+          }
+        },
+        confirm: async (m: string) => { try { return await confirmNative(m) } catch { return false } }
+      },
+      getEditorValue: () => editor.value,
+      setEditorValue: (v: string) => {
+        try {
+          editor.value = v
+          dirty = true
+          refreshTitle()
+          refreshStatus()
+          if (mode === 'preview') { void renderPreview() } else if (wysiwyg) { scheduleWysiwygRender() }
+        } catch {}
+      },
+    }
+    if (mod && typeof (mod as any).openSettings === 'function') {
+      await (mod as any).openSettings(ctx)
+    } else {
+      pluginNotice(t('ext.settings.notProvided'), 'err', 1600)
+    }
+  } catch (err) {
+    showError(t('ext.settings.openFail'), err)
+  }
+}
+
   // 启动时扩展更新检查：仅在应用启动后后台检查一次
   async function checkPluginUpdatesOnStartup(): Promise<void> {
     try {
@@ -10804,654 +10892,6 @@ async function updateInstalledPlugin(p: InstalledPlugin, info: PluginUpdateState
   return rec
 }
 
-// 创建扩展市场加载指示器
-function createLoadingIndicator(): HTMLElement {
-  const container = document.createElement('div')
-  container.className = 'ext-loading'
-
-  const spinner = document.createElement('div')
-  spinner.className = 'ext-loading-spinner'
-
-  const text = document.createElement('div')
-  text.className = 'ext-loading-text'
-  text.textContent = t('ext.market.loading')
-
-  container.appendChild(spinner)
-  container.appendChild(text)
-
-  return container
-}
-
-// 仅刷新“已安装扩展”区块（避免每次操作都重建市场列表）
-async function refreshInstalledExtensionsUI(): Promise<void> {
-  try {
-    if (!_extListHost) return
-    const host = _extListHost
-    const unifiedList = host.querySelector('.ext-list') as HTMLDivElement | null
-    if (!unifiedList) return
-
-    let installedMap: Record<string, InstalledPlugin> = {}
-    try {
-      installedMap = await getInstalledPlugins()
-    } catch {
-      installedMap = {}
-    }
-
-    const arr = Object.values(installedMap)
-    let updateMap: Record<string, PluginUpdateState> = {}
-    if (arr.length > 0 && _extLastMarketItems && _extLastMarketItems.length > 0) {
-      try {
-        updateMap = await getPluginUpdateStates(arr, _extLastMarketItems)
-      } catch {
-        updateMap = {}
-      }
-    }
-
-    renderInstalledExtensions(unifiedList, installedMap, updateMap)
-  } catch {}
-}
-
-// 渲染“已安装扩展”区块（统一复用，支持局部刷新）
-function renderInstalledExtensions(
-  unifiedList: HTMLDivElement,
-  installedMap: Record<string, InstalledPlugin>,
-  updateMap: Record<string, PluginUpdateState>
-): void {
-  try {
-    const installedRows = unifiedList.querySelectorAll('[data-type=\"installed\"]')
-    installedRows.forEach((row) => row.remove())
-  } catch {}
-
-  // 根据当前搜索关键字过滤已安装扩展（名称 / id / 描述）
-  const keywordRaw = (_extMarketSearchText || '').trim().toLowerCase()
-  let arr = Object.values(installedMap).filter((p) => {
-    if (!keywordRaw) return true
-    try {
-      const parts: string[] = []
-      if (p.name) parts.push(String(p.name))
-      if (p.id) parts.push(String(p.id))
-      if (p.description) parts.push(String(p.description))
-      const hay = parts.join(' ').toLowerCase()
-      return hay.includes(keywordRaw)
-    } catch {
-      // 出现异常时，不要因为搜索直接把条目干掉
-      return true
-    }
-  })
-
-  // “可更新”过滤：仅显示有更新版本的已安装扩展
-  if (_extUpdatesOnly) {
-    arr = arr.filter((p) => !!updateMap[p.id])
-  }
-
-  // 排序规则：按名称首字母 A-Z 排序（与市场保持一致，不受安装顺序影响）
-  arr = arr.slice().sort((a, b) => {
-    const na = String(a?.name || a?.id || '')
-    const nb = String(b?.name || b?.id || '')
-    // 优先使用统一 order 值，其次按名称 A-Z
-    const oa = getPluginOrder(a.id, na)
-    const ob = getPluginOrder(b.id, nb)
-    if (oa !== ob) return oa - ob
-    return na.localeCompare(nb, 'en', { sensitivity: 'base' })
-  })
-
-  for (const p of arr) {
-    const row = document.createElement('div')
-    row.className = 'ext-item'
-    row.setAttribute('data-type', 'installed')
-    try { row.style.order = String(getPluginOrder(p.id, p.name || p.id)) } catch {}
-    const meta = document.createElement('div'); meta.className = 'ext-meta'
-    const name = document.createElement('div'); name.className = 'ext-name'
-    const nameText = document.createElement('span')
-    const fullName = `${p.name || p.id} ${p.version ? '(' + p.version + ')' : ''}`
-    nameText.textContent = fullName
-    nameText.title = fullName  // 悬浮显示完整名称
-    name.appendChild(nameText)
-    const installedTag = document.createElement('span')
-    installedTag.className = 'ext-tag'
-    installedTag.textContent = '已安装'
-    installedTag.style.marginLeft = 'auto'
-    installedTag.style.color = '#22c55e'
-    name.appendChild(installedTag)
-    const updateInfo = updateMap[p.id]
-    if (updateInfo) {
-      const badge = document.createElement('span'); badge.className = 'ext-update-badge'; badge.textContent = 'UP'
-      name.appendChild(badge)
-    }
-    const desc = document.createElement('div'); desc.className = 'ext-desc'; desc.textContent = p.description || p.dir
-    meta.appendChild(name); meta.appendChild(desc)
-    const actions = document.createElement('div'); actions.className = 'ext-actions'
-    // 独立显示开关
-    const showToggleLabel = document.createElement('label')
-    showToggleLabel.className = 'ext-show-toggle'
-    showToggleLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;margin-right:8px'
-    const showToggleCheckbox = document.createElement('input')
-    showToggleCheckbox.type = 'checkbox'
-    showToggleCheckbox.checked = !!p.showInMenuBar
-    showToggleCheckbox.style.cursor = 'pointer'
-    showToggleCheckbox.addEventListener('change', async (e) => {
-      try {
-        const checked = (e.target as HTMLInputElement).checked
-        p.showInMenuBar = checked
-        installedMap[p.id] = p
-        await setInstalledPlugins(installedMap)
-        // 重新激活插件以应用变更
-        if (p.enabled) {
-          await deactivatePlugin(p.id)
-          await activatePlugin(p)
-        }
-        pluginNotice(checked ? '已设置为独立显示' : '已收纳到插件菜单', 'ok', 1500)
-      } catch (err) {
-        showError('切换显示模式失败', err)
-      }
-    })
-    const showToggleText = document.createElement('span')
-    showToggleText.textContent = '独立显示'
-    showToggleText.style.fontSize = '12px'
-    showToggleLabel.appendChild(showToggleCheckbox)
-    showToggleLabel.appendChild(showToggleText)
-    actions.appendChild(showToggleLabel)
-
-    if (p.enabled) {
-      const btnSet = document.createElement('button'); btnSet.className = 'btn'; btnSet.textContent = t('ext.settings')
-      btnSet.addEventListener('click', async () => {
-        try {
-          const mod = activePlugins.get(p.id)
-          const http = await getHttpClient()
-          const ctx = {
-            http,
-            invoke,
-            storage: {
-              get: async (key: string) => { try { if (!store) return null; const all = (await store.get('plugin:' + p.id)) as any || {}; return all[key] } catch { return null } },
-              set: async (key: string, value: any) => { try { if (!store) return; const all = (await store.get('plugin:' + p.id)) as any || {}; all[key] = value; await store.set('plugin:' + p.id, all); await store.save() } catch {} }
-            },
-            ui: {
-              notice: (msg: string, level?: 'ok' | 'err', ms?: number) => pluginNotice(msg, level, ms),
-              showNotification: (message: string, options?: { type?: 'success' | 'error' | 'info', duration?: number, onClick?: () => void }) => {
-                try {
-                  const opt = options || {}
-                  let notifType: NotificationType = 'plugin-success'
-                  if (opt.type === 'error') notifType = 'plugin-error'
-                  else if (opt.type === 'info') notifType = 'extension'
-                  else notifType = 'plugin-success'
-                  return NotificationManager.show(notifType, message, opt.duration, opt.onClick)
-                } catch (err) {
-                  console.error('[Plugin] showNotification 失败', err)
-                  return ''
-                }
-              },
-              hideNotification: (id: string) => {
-                try {
-                  NotificationManager.hide(id)
-                } catch (err) {
-                  console.error('[Plugin] hideNotification 失败', err)
-                }
-              },
-              confirm: async (m: string) => { try { return await confirmNative(m) } catch { return false } }
-            },
-            getEditorValue: () => editor.value,
-            setEditorValue: (v: string) => {
-              try {
-                editor.value = v
-                dirty = true
-                refreshTitle()
-                refreshStatus()
-                if (mode === 'preview') { void renderPreview() } else if (wysiwyg) { scheduleWysiwygRender() }
-              } catch {}
-            },
-          }
-          if (mod && typeof mod.openSettings === 'function') { await mod.openSettings(ctx) }
-          else pluginNotice(t('ext.settings.notProvided'), 'err', 1600)
-        } catch (err) { showError(t('ext.settings.openFail'), err) }
-      })
-      actions.appendChild(btnSet)
-    }
-
-    const btnToggle = document.createElement('button'); btnToggle.className = 'btn'; btnToggle.textContent = p.enabled ? t('ext.toggle.disable') : t('ext.toggle.enable')
-    btnToggle.addEventListener('click', async () => {
-      try {
-        p.enabled = !p.enabled
-        installedMap[p.id] = p
-        await setInstalledPlugins(installedMap)
-        if (p.enabled) await activatePlugin(p)
-        else await deactivatePlugin(p.id)
-        await refreshInstalledExtensionsUI()
-      } catch (err) { showError(t('ext.toggle.fail'), err) }
-    })
-    const info = updateMap[p.id]
-    if (info) {
-      const btnUpdate = document.createElement('button'); btnUpdate.className = 'btn'; btnUpdate.textContent = t('ext.update.btn')
-      btnUpdate.addEventListener('click', async () => {
-        try {
-          btnUpdate.textContent = t('ext.update.btn') + '...'; (btnUpdate as HTMLButtonElement).disabled = true
-          await updateInstalledPlugin(p, info)
-          await refreshInstalledExtensionsUI()
-          pluginNotice(t('ext.update.ok'), 'ok', 1500)
-        } catch (err) {
-          try { btnUpdate.textContent = t('ext.update.btn') } catch {}
-          try { (btnUpdate as HTMLButtonElement).disabled = false } catch {}
-          showError(t('ext.update.fail'), err)
-        }
-      })
-      actions.appendChild(btnUpdate)
-    }
-    const btnRemove = document.createElement('button'); btnRemove.className = 'btn warn'; btnRemove.textContent = t('ext.remove')
-    btnRemove.addEventListener('click', async () => {
-      const ok = await confirmNative(t('ext.remove.confirm', { name: p.name || p.id }))
-      if (!ok) return
-      try {
-        await deactivatePlugin(p.id)
-        await removeDirRecursive(p.dir)
-        delete installedMap[p.id]; await setInstalledPlugins(installedMap)
-        if (p.id === CORE_AI_EXTENSION_ID) {
-          await markCoreExtensionBlocked(p.id)
-        }
-        await refreshExtensionsUI()
-        pluginNotice(t('ext.removed'), 'ok', 1200)
-      } catch (err) { showError(t('ext.remove.fail'), err) }
-    })
-    actions.appendChild(btnToggle)
-    actions.appendChild(btnRemove)
-    row.appendChild(meta); row.appendChild(actions)
-    unifiedList.appendChild(row)
-  }
-}
-
-async function refreshExtensionsUI(): Promise<void> {
-  if (!_extListHost) return
-  const host = _extListHost
-  host.innerHTML = ''
-
-  // 1) 创建统一的扩展列表容器
-  const unifiedSection = document.createElement('div')
-  unifiedSection.className = 'ext-section'
-  const hd = document.createElement('div')
-  hd.className = 'ext-subtitle'
-  const hdText = document.createElement('span')
-  hdText.textContent = '扩展管理'
-  hd.appendChild(hdText)
-
-  // 优雅的加载指示器（小型 spinner）
-  const loadingSpinner = document.createElement('span')
-  loadingSpinner.className = 'ext-loading-spinner'
-  loadingSpinner.style.cssText = 'display:inline-block;width:14px;height:14px;border:2px solid rgba(127,127,127,0.2);border-top-color:#2563eb;border-radius:50%;animation:ext-spin 0.8s linear infinite;margin-left:10px'
-  hd.appendChild(loadingSpinner)
-
-  // 仅显示已安装开关
-  const installedOnlyWrap = document.createElement('label')
-  installedOnlyWrap.className = 'ext-market-channel'
-  installedOnlyWrap.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer'
-  const installedOnlyCheckbox = document.createElement('input')
-  installedOnlyCheckbox.type = 'checkbox'
-  installedOnlyCheckbox.id = 'ext-installed-only'
-  installedOnlyCheckbox.checked = false
-  installedOnlyCheckbox.style.cursor = 'pointer'
-  installedOnlyCheckbox.addEventListener('change', () => {
-    void applyMarketFilter()
-  })
-  const installedOnlyLabel = document.createElement('span')
-  installedOnlyLabel.textContent = '已安装'
-  installedOnlyLabel.style.fontSize = '12px'
-  installedOnlyWrap.appendChild(installedOnlyCheckbox)
-  installedOnlyWrap.appendChild(installedOnlyLabel)
-  hd.appendChild(installedOnlyWrap)
-
-  // 仅显示“可更新”的已安装扩展
-  const updatesOnlyWrap = document.createElement('label')
-  updatesOnlyWrap.className = 'ext-market-channel'
-  updatesOnlyWrap.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer'
-  const updatesOnlyCheckbox = document.createElement('input')
-  updatesOnlyCheckbox.type = 'checkbox'
-  updatesOnlyCheckbox.id = 'ext-updates-only'
-  updatesOnlyCheckbox.checked = _extUpdatesOnly
-  updatesOnlyCheckbox.style.cursor = 'pointer'
-  updatesOnlyCheckbox.addEventListener('change', () => {
-    _extUpdatesOnly = updatesOnlyCheckbox.checked
-    void (async () => {
-      try { await refreshInstalledExtensionsUI() } catch {}
-      try { await applyMarketFilter() } catch {}
-    })()
-  })
-  const updatesOnlyLabel = document.createElement('span')
-  updatesOnlyLabel.textContent = '可更新'
-  updatesOnlyLabel.style.fontSize = '12px'
-  updatesOnlyWrap.appendChild(updatesOnlyCheckbox)
-  updatesOnlyWrap.appendChild(updatesOnlyLabel)
-  hd.appendChild(updatesOnlyWrap)
-
-  // 渠道选择：GitHub / 官网
-  const channelWrap = document.createElement('div')
-  channelWrap.className = 'ext-market-channel'
-  const channelLabel = document.createElement('span')
-  channelLabel.className = 'ext-market-channel-label'
-  channelLabel.textContent = t('ext.market.channel')
-  const channelSelect = document.createElement('select')
-  channelSelect.className = 'ext-market-channel-select'
-  const optGithub = document.createElement('option')
-  optGithub.value = 'github'
-  optGithub.textContent = t('ext.market.channel.github')
-  const optOfficial = document.createElement('option')
-  optOfficial.value = 'official'
-  optOfficial.textContent = t('ext.market.channel.official')
-  channelSelect.appendChild(optGithub)
-  channelSelect.appendChild(optOfficial)
-  ;(async () => {
-    try {
-      const ch = await getMarketChannel()
-      channelSelect.value = ch === 'official' ? 'official' : 'github'
-    } catch {
-      channelSelect.value = 'github'
-    }
-  })()
-  channelSelect.addEventListener('change', () => {
-    const v = channelSelect.value === 'official' ? 'official' : 'github'
-    void (async () => {
-      await setMarketChannel(v)
-      await loadInstallablePlugins(true)
-      await refreshExtensionsUI()
-    })()
-  })
-  channelWrap.appendChild(channelLabel)
-  channelWrap.appendChild(channelSelect)
-  hd.appendChild(channelWrap)
-
-  const searchWrap = document.createElement('div'); searchWrap.className = 'ext-market-search'
-  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.className = 'ext-market-search-input'
-  searchInput.placeholder = t('ext.market.search.placeholder')
-  if (_extMarketSearchText) searchInput.value = _extMarketSearchText
-  searchInput.addEventListener('input', () => {
-    _extMarketSearchText = searchInput.value || ''
-    // 搜索变化时，同时刷新“已安装扩展”与“市场扩展”两个区块
-    void (async () => {
-      try { await refreshInstalledExtensionsUI() } catch {}
-      try { await applyMarketFilter() } catch {}
-    })()
-  })
-  searchWrap.appendChild(searchInput)
-  hd.appendChild(searchWrap)
-
-  const btnRefresh = document.createElement('button'); btnRefresh.className = 'btn'; btnRefresh.textContent = t('ext.refresh')
-  btnRefresh.addEventListener('click', async () => {
-    try {
-      (btnRefresh as HTMLButtonElement).disabled = true
-      await loadInstallablePlugins(true)
-      await refreshExtensionsUI()
-    } finally {
-      (btnRefresh as HTMLButtonElement).disabled = false
-    }
-  })
-  hd.appendChild(btnRefresh)
-  unifiedSection.appendChild(hd)
-
-  // 统一的扩展列表
-  const unifiedList = document.createElement('div')
-  unifiedList.className = 'ext-list'
-  unifiedSection.appendChild(unifiedList)
-  host.appendChild(unifiedSection)
-
-  // 2) 填充 Builtins（仅依赖本地 Store，不走网络）
-  for (const b of builtinPlugins) {
-    const row = document.createElement('div')
-    row.className = 'ext-item'
-    row.setAttribute('data-type', 'builtin')
-    try { row.style.order = String(getPluginOrder(b.id, b.name, -1000)) } catch {}
-    const meta = document.createElement('div'); meta.className = 'ext-meta'
-    const name = document.createElement('div'); name.className = 'ext-name'
-    const nameText = document.createElement('span')
-    const fullName = `${b.name} (${b.version})`
-    nameText.textContent = fullName
-    nameText.title = fullName  // 悬浮显示完整名称
-    name.appendChild(nameText)
-    const builtinTag = document.createElement('span')
-    builtinTag.className = 'ext-tag'
-    builtinTag.textContent = '内置'
-    builtinTag.style.marginLeft = '8px'
-    builtinTag.style.color = '#3b82f6'
-    name.appendChild(builtinTag)
-    const desc = document.createElement('div'); desc.className = 'ext-desc'; desc.textContent = b.description || ''
-    meta.appendChild(name); meta.appendChild(desc)
-    const actions = document.createElement('div'); actions.className = 'ext-actions'
-    if (b.id === 'uploader-s3') {
-      try {
-        const upCfg = await (async () => { try { if (store) return (await store.get('uploader')) as any } catch { return null } })()
-        const tag = document.createElement('span'); tag.className = 'ext-tag'; tag.textContent = upCfg?.enabled ? t('ext.enabled.tag.on') : t('ext.enabled.tag.off')
-        tag.style.opacity = '0.75'; tag.style.marginRight = '8px'; tag.style.color = upCfg?.enabled ? '#22c55e' : '#94a3b8'
-        actions.appendChild(tag)
-      } catch {}
-      const btn = document.createElement('button'); btn.className = 'btn primary'; btn.textContent = t('ext.settings')
-      btn.addEventListener('click', () => { try { void showExtensionsOverlay(false); void openUploaderDialog() } catch {} })
-      actions.appendChild(btn)
-    } else if (b.id === 'webdav-sync') {
-      try {
-        const cfg = await getWebdavSyncConfig()
-        const tag = document.createElement('span'); tag.className = 'ext-tag'; tag.textContent = cfg.enabled ? t('ext.enabled.tag.on') : t('ext.enabled.tag.off')
-        tag.style.opacity = '0.75'; tag.style.marginRight = '8px'; tag.style.color = cfg.enabled ? '#22c55e' : '#94a3b8'
-        actions.appendChild(tag)
-      } catch {}
-      const btn2 = document.createElement('button'); btn2.className = 'btn primary'; btn2.textContent = t('ext.settings')
-      btn2.addEventListener('click', () => { try { void showExtensionsOverlay(false); void openWebdavSyncDialog() } catch {} })
-      actions.appendChild(btn2)
-    }
-    row.appendChild(meta); row.appendChild(actions)
-    unifiedList.appendChild(row)
-  }
-
-  // 3) 并行加载“已安装扩展列表”和“市场索引”，避免无谓的串行等待
-  let installedMap: Record<string, InstalledPlugin> = {}
-  let marketItems: InstallableItem[] = []
-
-  // 市场列表过滤与渲染（可选接受一份覆盖的索引，用于后台静默刷新）
-  async function applyMarketFilter(itemsOverride?: InstallableItem[] | null): Promise<void> {
-    try {
-      // 先移除所有市场扩展
-      const marketRows = unifiedList.querySelectorAll('[data-type="market"]')
-      marketRows.forEach(r => r.remove())
-
-      // 如果处于“仅显示已安装”或“仅显示可更新”模式，则不渲染市场扩展
-      if (installedOnlyCheckbox.checked || _extUpdatesOnly) {
-        return
-      }
-
-      const base = Array.isArray(itemsOverride) ? itemsOverride : marketItems
-      let source = Array.isArray(base) ? base : []
-      if (!source || source.length === 0) {
-        const loadingRow = document.createElement('div')
-        loadingRow.className = 'ext-item'
-        loadingRow.setAttribute('data-type', 'market')
-        loadingRow.appendChild(createLoadingIndicator())
-        unifiedList.appendChild(loadingRow)
-        return
-      }
-
-      // 如果勾选了"仅显示已安装"，直接返回，不显示市场扩展
-      if (installedOnlyCheckbox.checked) {
-        return
-      }
-
-      // 每次根据最新安装列表过滤，已安装的扩展不再出现在市场区块
-      let installedMapNow: Record<string, InstalledPlugin> = {}
-      try {
-        installedMapNow = await getInstalledPlugins()
-      } catch {
-        installedMapNow = {}
-      }
-      const installedIds = new Set(Object.keys(installedMapNow))
-
-      const keywordRaw = (_extMarketSearchText || '').trim().toLowerCase()
-      let items = source.filter((it) => {
-        try {
-          if (!it || !it.id) return false
-          if (installedIds.has(it.id)) return false
-          return true
-        } catch {
-          return true
-        }
-      })
-      if (keywordRaw) {
-        items = items.filter((it) => {
-          try {
-            const parts: string[] = []
-            if (it.name) parts.push(String(it.name))
-            if (it.id) parts.push(String(it.id))
-            if (it.description) parts.push(String(it.description))
-            if (it.author) parts.push(String(it.author))
-            const hay = parts.join(' ').toLowerCase()
-            return hay.includes(keywordRaw)
-          } catch {
-            return true
-          }
-        })
-      }
-
-      // 排序：推荐优先，其次按名称首字母 A-Z（与索引加载时保持一致，确保在过滤后顺序稳定）
-      try {
-        items = items.slice().sort(compareInstallableItems)
-      } catch {}
-
-      if (!items.length) {
-        // 如果已安装/内置扩展中仍有条目（可能匹配当前搜索），就不要再显示“没有匹配”的提示
-        const hasOtherRows = unifiedList.querySelector('[data-type=\"installed\"], [data-type=\"builtin\"]')
-        if (!hasOtherRows) {
-          const empty = document.createElement('div')
-          empty.className = 'ext-empty'
-          empty.textContent = t('ext.market.empty.search')
-          empty.setAttribute('data-type', 'market')
-          unifiedList.appendChild(empty)
-        }
-        return
-      }
-
-      for (const it of items) {
-        const row = document.createElement('div')
-        row.className = 'ext-item'
-        row.setAttribute('data-type', 'market')
-        try { row.setAttribute('data-plugin-id', String(it.id || '')) } catch {}
-
-        const meta = document.createElement('div'); meta.className = 'ext-meta'
-        const name = document.createElement('div'); name.className = 'ext-name'
-        const fullName = String(it.name || it.id)
-        try { row.style.order = String(getPluginOrder(String(it.id || ''), fullName)) } catch {}
-        const spanName = document.createElement('span')
-        spanName.textContent = fullName
-        spanName.title = fullName  // 悬浮显示完整名称
-        name.appendChild(spanName)
-
-        try {
-          if ((it as any).featured === true) {
-            const badge = document.createElement('span')
-            badge.className = 'ext-tag'
-            badge.textContent = '推荐'
-            badge.style.marginLeft = '8px'
-            badge.style.color = '#f97316'
-            name.appendChild(badge)
-          }
-        } catch {}
-
-        const desc = document.createElement('div'); desc.className = 'ext-desc'
-        if (it.description) {
-          const descText = document.createElement('span'); descText.textContent = it.description
-          desc.appendChild(descText)
-        }
-        if (it.author || it.homepage) {
-          const spacing = document.createTextNode('  ')
-          desc.appendChild(spacing)
-          if (it.author) {
-            const authorSpan = document.createElement('span'); authorSpan.textContent = t('ext.author') + (it.author || '')
-            desc.appendChild(authorSpan)
-            if (it.homepage) { desc.appendChild(document.createTextNode(' ')) }
-          }
-          if (it.homepage) {
-            const a = document.createElement('a'); a.href = it.homepage!; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = t('ext.homepage')
-            a.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); try { void openInBrowser(it.homepage!) } catch {} })
-            desc.appendChild(a)
-          }
-        }
-        meta.appendChild(name); meta.appendChild(desc)
-
-        const actions = document.createElement('div'); actions.className = 'ext-actions'
-        const btnInstall = document.createElement('button'); btnInstall.className = 'btn primary'; btnInstall.textContent = t('ext.install.btn')
-        btnInstall.addEventListener('click', async () => {
-          try {
-            btnInstall.textContent = t('ext.install.btn') + '...'; (btnInstall as HTMLButtonElement).disabled = true
-            const rec = await installPluginFromGit(it.install.ref)
-            await activatePlugin(rec)
-            try {
-              await refreshInstalledExtensionsUI()
-              await applyMarketFilter()
-            } catch {}
-            pluginNotice('安装成功', 'ok', 1500)
-          } catch (e) {
-            try { btnInstall.textContent = '安装' } catch {}
-            try { (btnInstall as HTMLButtonElement).disabled = false } catch {}
-            void appendLog('ERROR', '安装扩展失败', e)
-            const errMsg = (e instanceof Error) ? e.message : String(e)
-            pluginNotice('安装扩展失败' + (errMsg ? ': ' + errMsg : ''), 'err', 3000)
-          }
-        })
-        actions.appendChild(btnInstall)
-        row.appendChild(meta); row.appendChild(actions)
-        unifiedList.appendChild(row)
-      }
-    } catch {
-      const marketRows = unifiedList.querySelectorAll('[data-type="market"]')
-      marketRows.forEach(r => r.remove())
-      const loadingRow = document.createElement('div')
-      loadingRow.className = 'ext-item'
-      loadingRow.setAttribute('data-type', 'market')
-      loadingRow.appendChild(createLoadingIndicator())
-      unifiedList.appendChild(loadingRow)
-    }
-  }
-
-  try {
-    installedMap = await getInstalledPlugins()
-  } catch { installedMap = {} }
-  try {
-    marketItems = await loadInstallablePlugins(false)
-  } catch {
-    marketItems = FALLBACK_INSTALLABLES.slice()
-  }
-
-  _extLastMarketItems = marketItems
-  // 基于当前市场索引构建统一排序顺序（推荐优先 + 名称 A-Z），与安装状态解耦
-  _extGlobalOrder = {}
-  try {
-    const sortedForOrder = (marketItems || []).slice().sort(compareInstallableItems)
-    let idx = 0
-    for (const it of sortedForOrder) {
-      if (!it || !it.id) continue
-      _extGlobalOrder[it.id] = 100 + idx++
-    }
-  } catch {}
-  // 内置扩展固定靠前，但保留相对顺序
-  try {
-    let idx = 0
-    for (const b of builtinPlugins) {
-      if (!b || !b.id) continue
-      _extGlobalOrder[b.id] = idx++
-    }
-  } catch {}
-  // 记录供后台静默刷新重用的过滤函数（复用当前 unifiedList / 控件状态）
-  _extApplyMarketFilter = applyMarketFilter
-
-  const arr = Object.values(installedMap)
-  let updateMap: Record<string, PluginUpdateState> = {}
-  if (arr.length > 0 && marketItems.length > 0) {
-    try {
-      updateMap = await getPluginUpdateStates(arr, marketItems)
-    } catch { updateMap = {} }
-  }
-
-  // 4) 填充"已安装扩展"区块
-  renderInstalledExtensions(unifiedList, installedMap, updateMap)
-
-  // 5) 填充"可安装的扩展"区块（扩展市场）
-  await applyMarketFilter()
-
-  // 所有扩展加载完成，隐藏加载指示器
-  loadingSpinner.remove()
-}
-
 async function removeDirRecursive(dir: string): Promise<void> {
   try {
     const entries = await readDir(dir as any, { baseDir: BaseDirectory.AppLocalData } as any)
@@ -11473,112 +10913,11 @@ function isLikelyLocalPath(input: string): boolean {
   return false
 }
 
-function ensureExtensionsOverlayMounted() {
-  if (_extOverlayEl) return
-  const overlay = document.createElement('div')
-  overlay.className = 'ext-overlay'
-  overlay.id = 'extensions-overlay'
-  overlay.innerHTML = `
-    <div class=\"ext-dialog\" role=\"dialog\" aria-modal=\"true\">
-      <div class=\"ext-header\">
-        <div>${t('ext.title')}</div>
-        <button class=\"ext-close\" id=\"ext-close\">×</button>
-      </div>
-      <div class=\"ext-body\">
-        <div class=\"ext-section\">
-          <div class=\"ext-subtitle\">${t('ext.install.section')}</div>
-          <div class=\"ext-install\">
-            <input type=\"text\" id=\"ext-install-input\" placeholder=\"${t('ext.install.placeholder')}\">
-            <button id=\"ext-browse-local-btn\">浏览...</button>
-            <button class=\"primary\" id=\"ext-install-btn\">${t('ext.install.btn')}</button>
-          </div>
-        </div>
-        <div class=\"ext-section\" id=\"ext-list-host\"></div>
-      </div>
-    </div>
-  `
-  document.body.appendChild(overlay)
-  _extOverlayEl = overlay
-  _extListHost = overlay.querySelector('#ext-list-host') as HTMLDivElement | null
-  _extInstallInput = overlay.querySelector('#ext-install-input') as HTMLInputElement | null
-  const btnClose = overlay.querySelector('#ext-close') as HTMLButtonElement | null
-  const btnInstall = overlay.querySelector('#ext-install-btn') as HTMLButtonElement | null
-  const btnBrowseLocal = overlay.querySelector('#ext-browse-local-btn') as HTMLButtonElement | null
-
-  btnClose?.addEventListener('click', () => showExtensionsOverlay(false))
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) showExtensionsOverlay(false) })
-
-  // GitHub/URL/本地 安装（统一入口，根据输入内容区分）
-  btnInstall?.addEventListener('click', async () => {
-    const v = (_extInstallInput?.value || '').trim()
-    if (!v) return
-    try {
-      let rec: InstalledPlugin
-      if (isLikelyLocalPath(v)) {
-        rec = await installPluginFromLocal(v)
-      } else {
-        rec = await installPluginFromGit(v)
-      }
-      await activatePlugin(rec)
-      _extInstallInput!.value = ''
-      try { await refreshExtensionsUI() } catch {}
-      pluginNotice(t('ext.install.ok'), 'ok', 1500)
-    } catch (e) {
-      void appendLog('ERROR', t('ext.install.fail'), e)
-      const errMsg = (e instanceof Error) ? e.message : String(e)
-      pluginNotice(t('ext.install.fail') + (errMsg ? ': ' + errMsg : ''), 'err', 3000)
-    }
-  })
-
-  // 浏览本地文件夹
-  async function browseLocalFolder() {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: '选择扩展文件夹'
-      })
-      if (selected && typeof selected === 'string') {
-        if (_extInstallInput) _extInstallInput.value = selected
-      }
-    } catch (e) {
-      console.error('选择文件夹失败', e)
-    }
-  }
-
-  btnBrowseLocal?.addEventListener('click', () => { void browseLocalFolder() })
-}
-
+// 兼容旧代码：保留空实现，防止第三方脚本直接调用 showExtensionsOverlay
 async function showExtensionsOverlay(show: boolean): Promise<void> {
-  ensureExtensionsOverlayMounted()
-  if (!_extOverlayEl) return
-  if (show) {
-    _extOverlayEl.classList.add('show')
-    // 第一次打开：完整刷新（可能触发网络请求和市场索引加载）
-    if (!_extOverlayRenderedOnce) {
-      _extOverlayRenderedOnce = true
-      await refreshExtensionsUI()
-    } else {
-      // 之后再次打开：仅做轻量刷新，避免每次都重建 DOM / 触发远程请求
-      try { await refreshInstalledExtensionsUI() } catch {}
-      // 后台静默刷新市场列表：尊重缓存 TTL，不显示 loading，不阻塞 UI
-      const fn = _extApplyMarketFilter
-      if (fn) {
-        void (async () => {
-          try {
-            const items = await loadInstallablePlugins(false)
-            if (!Array.isArray(items) || items.length === 0) return
-            _extLastMarketItems = items
-            await fn(items)
-          } catch {
-            // 静默失败，不打扰用户
-          }
-        })()
-      }
-    }
-  } else {
-    _extOverlayEl.classList.remove('show')
-  }
+  try {
+    await panelShowExtensionsOverlay(show)
+  } catch {}
 }
 
 async function loadAndActivateEnabledPlugins(): Promise<void> {

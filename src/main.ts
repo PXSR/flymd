@@ -7436,227 +7436,7 @@ function bindEvents() {
       }
     },
   })
-  // 旧实现保留为空注释，避免重复绑定
-  /*document.addEventListener('contextmenu', (ev) => {
-    const target = ev.target as HTMLElement
-    const row = target?.closest?.('.lib-node') as HTMLElement | null
-    if (!row) return
-    const tree = document.getElementById('lib-tree') as HTMLDivElement | null
-    if (!tree || !tree.contains(row)) return
-    ev.preventDefault()
-    const path = (row as any).dataset?.path as string || ''
-    const isDir = row.classList.contains('lib-dir')
-    let menu = document.getElementById('lib-ctx') as HTMLDivElement | null
-    if (!menu) {
-      menu = document.createElement('div') as HTMLDivElement
-      menu.id = 'lib-ctx'
-      menu.style.position = 'absolute'
-      menu.style.zIndex = '9999'
-      menu.style.background = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#fff'
-      menu.style.color = getComputedStyle(document.documentElement).getPropertyValue('--fg') || '#111'
-      menu.style.border = '1px solid ' + (getComputedStyle(document.documentElement).getPropertyValue('--border') || '#e5e7eb')
-      menu.style.borderRadius = '8px'
-      menu.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)'
-      menu.style.minWidth = '160px'
-      menu.addEventListener('click', (e2) => e2.stopPropagation())
-      document.body.appendChild(menu)
-    }
-    const mkItem = (txt: string, act: () => void) => {
-      const a = document.createElement('div') as HTMLDivElement
-      a.textContent = txt
-      a.style.padding = '8px 12px'
-      a.style.cursor = 'pointer'
-      a.addEventListener('mouseenter', () => a.style.background = 'rgba(127,127,127,0.12)')
-      a.addEventListener('mouseleave', () => a.style.background = 'transparent')
-      a.addEventListener('click', () => { act(); hide() })
-      return a
-    }
-    const hide = () => {
-      if (menu) { menu.style.display = 'none' }
-      document.removeEventListener('click', onDoc)
-      if (_libCtxKeyHandler) {
-        document.removeEventListener('keydown', _libCtxKeyHandler)
-        _libCtxKeyHandler = null
-      }
-    }
-    const onDoc = () => hide()
-    menu.innerHTML = ''
 
-    // 文件节点专属操作：在新实例中打开 / 生成便签
-    if (!isDir) {
-      // 在新实例中打开：若当前文档有未保存改动且路径相同，则阻止，避免用户误以为新实例包含未保存内容
-      menu.appendChild(mkItem(t('ctx.openNewInstance'), async () => {
-        try {
-          const win = (window as any)
-          const openFn = win?.flymdOpenInNewInstance as ((p: string) => Promise<void>) | undefined
-          if (typeof openFn !== 'function') {
-            alert('当前环境不支持新实例打开，请直接从系统中双击该文件。')
-            return
-          }
-          try {
-            const cur = currentFilePath ? normalizePath(currentFilePath) : ''
-            const target = normalizePath(path)
-            if (cur && cur === target && dirty) {
-              alert('当前文档有未保存的更改，禁止在新实例中打开。\n请先保存后再尝试。')
-              return
-            }
-          } catch {}
-          await openFn(path)
-        } catch (e) {
-          console.error('[库树] 新实例打开文档失败:', e)
-        }
-      }))
-
-      // 生成便签：若当前文档即该路径且有未保存改动，先尝试自动保存（与标签栏行为保持一致）
-      menu.appendChild(mkItem(t('ctx.createSticky'), async () => {
-        try {
-          const win = (window as any)
-          const createFn = win?.flymdCreateStickyNote as ((p: string) => Promise<void>) | undefined
-          if (typeof createFn !== 'function') {
-            alert('当前环境不支持便签功能。')
-            return
-          }
-          try {
-            const cur = currentFilePath ? normalizePath(currentFilePath) : ''
-            const target = normalizePath(path)
-            if (cur && cur === target && dirty) {
-              const saveFn = win?.flymdSaveFile as (() => Promise<void>) | undefined
-              if (typeof saveFn === 'function') {
-                try {
-                  await saveFn()
-                } catch (err) {
-                  console.error('[库树] 自动保存失败:', err)
-                  alert('自动保存失败，无法生成便签。')
-                  return
-                }
-              }
-            }
-          } catch {}
-          await createFn(path)
-        } catch (e) {
-          console.error('[库树] 生成便签失败:', e)
-        }
-      }))
-    }
-
-    if (isDir) {
-      menu.appendChild(mkItem(t('ctx.newFile'), async () => {
-        try {
-          let p2 = await newFileSafe(path)
-          // 弹出重命名对话框
-          const oldName = p2.split(/[\\/]+/).pop() || ''
-          const m = oldName.match(/^(.*?)(\.[^.]+)$/)
-          const stem = m ? m[1] : oldName
-          const ext = m ? m[2] : '.md'
-          const newStem = await openRenameDialog(stem, ext)
-          if (newStem && newStem !== stem) {
-            const newName = newStem + ext
-            p2 = await renameFileSafe(p2, newName)
-          }
-          await openFile2(p2)
-          mode='edit'
-          preview.classList.add('hidden')
-          try { (editor as HTMLTextAreaElement).focus() } catch {}
-          const treeEl = document.getElementById('lib-tree') as HTMLDivElement | null
-          if (treeEl && !fileTreeReady) {
-            await fileTree.init(treeEl, {
-              getRoot: getLibraryRoot,
-              onOpenFile: async (p: string) => { await openFile2(p) },
-              onOpenNewFile: async (p: string) => { await openFile2(p); mode='edit'; preview.classList.add('hidden'); try { (editor as HTMLTextAreaElement).focus() } catch {} },
-              onMoved: async (src: string, dst: string) => { try { if (currentFilePath === src) { currentFilePath = dst as any; refreshTitle() } } catch {} }
-            })
-            fileTreeReady = true
-          } else if (treeEl) {
-            await fileTree.refresh()
-          }
-          const n2 = Array.from((document.getElementById('lib-tree')||document.body).querySelectorAll('.lib-node.lib-dir') as any).find((n:any) => n.dataset?.path === path)
-          if (n2 && !n2.classList.contains('expanded')) {
-            n2.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-          }
-        } catch (e) {
-          showError('新建失败', e)
-        }
-      }))
-      menu.appendChild(mkItem(t('ctx.newFolder'), async () => { try { await newFolderSafe(path); const treeEl = document.getElementById('lib-tree') as HTMLDivElement | null; if (treeEl && !fileTreeReady) { await fileTree.init(treeEl, { getRoot: getLibraryRoot, onOpenFile: async (p: string) => { await openFile2(p) }, onOpenNewFile: async (p: string) => { await openFile2(p); mode='edit'; preview.classList.add('hidden'); try { (editor as HTMLTextAreaElement).focus() } catch {} }, onMoved: async (src: string, dst: string) => { try { if (currentFilePath === src) { currentFilePath = dst as any; refreshTitle() } } catch {} } }); fileTreeReady = true } else if (treeEl) { await fileTree.refresh() }; const n2 = Array.from((document.getElementById('lib-tree')||document.body).querySelectorAll('.lib-node.lib-dir') as any).find((n:any) => n.dataset?.path === path); if (n2 && !n2.classList.contains('expanded')) { n2.dispatchEvent(new MouseEvent('click', { bubbles: true })) } } catch (e) { showError('新建文件夹失败', e) } }))
-    }
-    // 拖拽托底：右键"移动到…"以便选择目标目录
-    menu.appendChild(mkItem(t('ctx.moveTo'), async () => {
-      try {
-        const root = await getLibraryRoot(); if (!root) { alert('请先选择库目录'); return }
-        if (!isInside(root, path)) { alert('仅允许移动库内文件/文件夹'); return }
-        if (typeof open !== 'function') { alert('该功能需要在 Tauri 应用中使用'); return }
-        const defaultDir = path.replace(/[\\/][^\\/]*$/, '')
-        const picked = await open({ directory: true, defaultPath: defaultDir || root }) as any
-        const dest = (typeof picked === 'string') ? picked : ((picked as any)?.path || '')
-        if (!dest) return
-        if (!isInside(root, dest)) { alert('仅允许移动到库目录内'); return }
-        const name = (path.split(/[\\/]+/).pop() || '')
-        const sep = dest.includes('\\') ? '\\' : '/'
-        const dst = dest.replace(/[\\/]+$/, '') + sep + name
-        if (dst === path) return
-        if (await exists(dst)) {
-          const ok = await ask('目标已存在，是否覆盖？')
-          if (!ok) return
-        }
-        await moveFileSafe(path, dst)
-        if (currentFilePath === path) { currentFilePath = dst as any; refreshTitle() }
-        const treeEl = document.getElementById('lib-tree') as HTMLDivElement | null
-        if (treeEl && !fileTreeReady) { await fileTree.init(treeEl, { getRoot: getLibraryRoot, onOpenFile: async (p: string) => { await openFile2(p) }, onOpenNewFile: async (p: string) => { await openFile2(p); mode='edit'; preview.classList.add('hidden'); try { (editor as HTMLTextAreaElement).focus() } catch {} }, onMoved: async (src: string, dst: string) => { try { if (currentFilePath === src) { currentFilePath = dst as any; refreshTitle() } } catch {} } }); fileTreeReady = true }
-        else if (treeEl) { await fileTree.refresh() }
-      } catch (e) { showError('移动失败', e) }
-    }))
-    // 重命名操作
-    const doRename = async () => { void renamePathWithDialog(path) }
-    // 删除操作
-    const doDelete = async () => { try { console.log('[删除] 右键菜单删除, 路径:', path); const confirmMsg = isDir ? '确定删除该文件夹及其所有内容？将移至回收站' : '确定删除该文件？将移至回收站'; const ok = await confirmNative(confirmMsg); console.log('[删除] 用户确认结果:', ok); if (!ok) return; console.log('[删除] 开始删除', isDir ? '文件夹' : '文件'); await deleteFileSafe(path, false); console.log('[删除] 删除完成'); if (currentFilePath === path) { currentFilePath = null as any; if (editor) (editor as HTMLTextAreaElement).value = ''; if (preview) preview.innerHTML = ''; refreshTitle() } const treeEl = document.getElementById('lib-tree') as HTMLDivElement | null; if (treeEl && !fileTreeReady) { await fileTree.init(treeEl, { getRoot: getLibraryRoot, onOpenFile: async (p: string) => { await openFile2(p) }, onOpenNewFile: async (p: string) => { await openFile2(p); mode='edit'; preview.classList.add('hidden'); try { (editor as HTMLTextAreaElement).focus() } catch {} }, onMoved: async (src: string, dst: string) => { try { if (currentFilePath === src) { currentFilePath = dst as any; refreshTitle() } } catch {} } }); fileTreeReady = true } else if (treeEl) { await fileTree.refresh() } } catch (e) { showError('删除失败', e) } }
-    menu.appendChild(mkItem(t('ctx.rename'), doRename))
-    menu.appendChild(mkItem(t('ctx.delete'), doDelete))
-
-    // 排列方式（名称/修改时间）和文件夹排序重置
-    try {
-      const sep = document.createElement('div') as HTMLDivElement
-      sep.style.borderTop = '1px solid ' + (getComputedStyle(document.documentElement).getPropertyValue('--border') || '#e5e7eb')
-      sep.style.margin = '6px 0'
-      menu.appendChild(sep)
-      const applySort = async (mode: LibSortMode) => {
-        await setLibrarySort(mode)
-        try { fileTree.setSort(mode) } catch {}
-        try { await fileTree.refresh() } catch {}
-      }
-      menu.appendChild(mkItem(t('ctx.sortNameAsc'), () => { void applySort('name_asc') }))
-      menu.appendChild(mkItem(t('ctx.sortNameDesc'), () => { void applySort('name_desc') }))
-      menu.appendChild(mkItem(t('ctx.sortTimeDesc'), () => { void applySort('mtime_desc') }))
-      menu.appendChild(mkItem(t('ctx.sortTimeAsc'), () => { void applySort('mtime_asc') }))
-
-      if (isDir) {
-        menu.appendChild(mkItem('恢复当前文件夹排序', async () => {
-          try {
-            // 仅清空当前目录的手动文件夹排序，不影响文件和其他目录
-            try { (await import('./fileTree')).clearFolderOrderForParent(path) } catch {}
-            try { await fileTree.refresh() } catch {}
-          } catch {}
-        }))
-      }
-    } catch {}
-    menu.style.left = Math.min(ev.clientX, (window.innerWidth - 180)) + 'px'
-    menu.style.top = Math.min(ev.clientY, (window.innerHeight - 120)) + 'px'
-    menu.style.display = 'block'
-    setTimeout(() => document.addEventListener('click', onDoc, { once: true }), 0)
-
-    // 添加键盘快捷键支持：M 键重命名，D 键删除
-    _libCtxKeyHandler = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === 'm') {
-        e.preventDefault()
-        hide()
-        void doRename()
-      } else if (e.key.toLowerCase() === 'd') {
-        e.preventDefault()
-        hide()
-        void doDelete()
-      }
-    }
-    document.addEventListener('keydown', _libCtxKeyHandler)
-  })*/
   // 所见模式：右键打印（已去除，根据用户反馈移除该菜单）
   document.addEventListener('click', async (ev) => {
     const t = ev?.target as HTMLElement
@@ -8282,10 +8062,7 @@ function bindEvents() {
       showError('拖拽处理失败', err)
     }
   })
-
   // 快捷键
-  
-
   // 关闭前确认（未保存）
   // 注意：Windows 平台上在 onCloseRequested 中调用浏览器 confirm 可能被拦截/无效，
   // 使用 Tauri 原生 ask 更稳定；必要时再降级到 confirm。
@@ -8388,14 +8165,12 @@ function bindEvents() {
       panel.classList.add('hidden')
     }
   })
-
   // 便签模式：全局屏蔽右键菜单（仅便签模式生效，避免影响其他模式）
   document.addEventListener('contextmenu', (e: MouseEvent) => {
     if (!stickyNoteMode) return
     e.preventDefault()
     e.stopPropagation()
   }, true)
-
   // 库按钮内部操作
   try {
     const chooseBtn = document.getElementById('lib-choose') as HTMLButtonElement | null
@@ -8403,7 +8178,6 @@ function bindEvents() {
     if (chooseBtn) chooseBtn.addEventListener('click', guard(async () => { await showLibraryMenu() }))
     if (refreshBtn) refreshBtn.addEventListener('click', guard(async () => { const treeEl = document.getElementById('lib-tree') as HTMLDivElement | null; if (treeEl && !fileTreeReady) { await fileTree.init(treeEl, { getRoot: getLibraryRoot, onOpenFile: async (p: string) => { await openFile2(p) }, onOpenNewFile: async (p: string) => { await openFile2(p); mode='edit'; preview.classList.add('hidden'); try { (editor as HTMLTextAreaElement).focus() } catch {} }, onMoved: async (src: string, dst: string) => { try { if (currentFilePath === src) { currentFilePath = dst as any; refreshTitle() } } catch {} } }); fileTreeReady = true } else if (treeEl) { await fileTree.refresh() } try { const s = await getLibrarySort(); fileTree.setSort(s); await fileTree.refresh() } catch {} }))
   } catch {}
-
   // 关于弹窗：点击遮罩或“关闭”按钮关闭
   const overlay = document.getElementById('about-overlay') as HTMLDivElement | null
   if (overlay) {
@@ -8597,10 +8371,8 @@ function bindEvents() {
       const docked = await getLibraryDocked()
       await setLibraryDocked(docked, false)
     } catch {}
-
     // 开发模式：不再自动打开 DevTools，改为快捷键触发，避免干扰首屏
     // 快捷键见下方全局 keydown（F12 或 Ctrl+Shift+I）
-
     // 核心功能：必须执行
     refreshTitle()
     refreshStatus()
@@ -8651,7 +8423,6 @@ function bindEvents() {
         if (isF12 || isCtrlShiftI) { e.preventDefault(); try { getCurrentWebview().openDevtools() } catch {} }
       })
     } catch {}
-
     // 便签模式检测：检查启动参数中是否有 --sticky-note
     let isStickyNoteStartup = false
     try {
@@ -8820,10 +8591,6 @@ function bindEvents() {
   }
 })()
 
-
-
-
-
 // 获取用户图片目录：优先使用 Tauri API，失败则基于 homeDir 猜测 Pictures
 // ========= 粘贴/拖拽异步上传占位支持 =========
 // 兼容入口：保留旧函数名，内部委托给核心模块
@@ -8962,8 +8729,6 @@ try {
     } catch (e) { console.error('flymdSetPluginMarketUrl 失败', e); return false }
   }
 } catch {}
-
-
 // 预览消毒开关：允许在发行版关闭预览消毒（定位构建差异问题），
 // 并支持用 localStorage 覆盖（flymd:sanitizePreview = '0'/'false' 关闭；'1'/'true' 开启）。
 function shouldSanitizePreview(): boolean {
@@ -8978,7 +8743,5 @@ function shouldSanitizePreview(): boolean {
   // 默认策略：开发环境开启，发行版关闭（仅针对预览渲染，粘贴/更新弹窗仍保留基础消毒）
   try { return !!((import.meta as any).env?.DEV) } catch { return false }
 }
-
 // 初始化多标签系统（包装器模式，最小侵入）
 import('./tabs/integration').catch(e => console.warn('[Tabs] Failed to load tab system:', e))
-

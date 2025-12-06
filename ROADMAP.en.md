@@ -2,6 +2,15 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v0.6.4
+- Added: Extension runtime now exposes `context.getLibraryRoot` and `context.saveMarkdownToCurrentFolder`, so plugins can safely read/write Markdown files inside the current library, enabling richer local automation flows such as PDF parsing and translation.
+- Improved: The “PDF & Image High-Precision Parser” extension now supports automatic paginated translation for large PDFs and shows a confirmation dialog before starting long-running translation tasks, reducing accidental heavy jobs and quota waste.
+- Improved: The document library now watches the filesystem and refreshes automatically when third-party tools create, delete or modify files under the library root, keeping the sidebar in sync with the actual folder contents.
+- Improved: Library sidebar context menu positions itself within the visible window to avoid being clipped off-screen, and the `D` / `M` keyboard shortcuts have been removed to eliminate rare accidental triggers.
+- Improved: When creating a new document or folder from the library sidebar, flyMD now prompts for a name first and only then creates the underlying file or directory, avoiding piles of “untitled” entries.
+- Fixed: Reverted the dark-mode behavior change introduced in v0.6.3 and temporarily restored the “auto-enable dark theme when the OS is in dark mode” logic to fix dark-theme issues on some platforms.
+- Docs: Updated README and plugin development docs to cover the new extension APIs and the latest usage notes for the MinerU PDF/Image parsing extension.
+
 ## Update v0.6.3
 - Added: Published the official “MinerU PDF/Image Parser” extension, which uses the MinerU API to structurally parse PDFs and images, providing an alternative pipeline for complex scans and mixed image+text documents.
 - Added: Published the “Send to Blinko” extension, adding a context-menu entry to send the current content to Blinko in one click.

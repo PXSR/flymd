@@ -63,6 +63,17 @@
     },
     {
       "homepage": "https://github.com/flyhunterl/flymd",
+      "name": "MinerU PDF/图片解析",
+      "description": "使用 MinerU 官方 API 对本地 PDF / 图片发起解析，返回结果压缩包链接。",
+      "author": "flyMD",
+      "id": "mineru",
+      "install": {
+        "ref": "https://raw.githubusercontent.com/flyhunterl/flymd/main/public/plugins/mineru/manifest.json",
+        "type": "manifest"
+      }
+    },
+    {
+      "homepage": "https://github.com/flyhunterl/flymd",
       "name": "发送到 Blinko",
       "description": "右键菜单一键将当前内容发送到 Blinko",
       "author": "flyMD",

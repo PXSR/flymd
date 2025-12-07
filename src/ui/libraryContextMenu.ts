@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import type { LibSortMode } from '../core/librarySort'
 import { openRenameDialog } from './linkDialogs'
 import { newFileSafe, newFolderSafe } from '../fileTree'
+import { showLibraryDeleteDialog } from '../dialog'
 
 export type LibraryContextMenuDeps = {
   getCurrentFilePath(): string | null
@@ -230,10 +231,8 @@ export function initLibraryContextMenu(deps: LibraryContextMenuDeps): void {
 
     const doDelete = async () => {
       try {
-        const confirmMsg = isDir
-          ? '确定删除该文件夹及其所有内容？将移至回收站'
-          : '确定删除该文件？将移至回收站'
-        const ok = await deps.confirmNative(confirmMsg)
+        const name = (path.split(/[\\/]+/).pop() || '').trim()
+        const ok = await showLibraryDeleteDialog(name, isDir)
         if (!ok) return
         await deps.deleteFileSafe(path, false)
         deps.onAfterDeleteCurrent()

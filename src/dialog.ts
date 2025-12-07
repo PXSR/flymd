@@ -8,6 +8,7 @@ export type DialogResult = 'save' | 'discard' | 'cancel'
 // WebDAV 同步冲突对话框返回值
 export type ConflictResult = 'local' | 'remote' | 'cancel'
 export type TwoChoiceResult = 'confirm' | 'cancel'
+export type BoolResult = boolean
 
 // 对话框样式
 const dialogStyles = `
@@ -238,6 +239,83 @@ export function showThreeButtonDialog(
       if (e.key === 'Escape') {
         e.preventDefault()
         closeDialog('cancel')
+        document.removeEventListener('keydown', handleKeyDown)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+  })
+}
+
+/**
+ * 库侧栏删除确认对话框（文件/文件夹共用）
+ * @param filename 文件或文件夹名
+ * @param isDir 是否为文件夹
+ * @returns Promise<boolean> - true: 确认删除, false: 取消
+ */
+export function showLibraryDeleteDialog(
+  filename: string,
+  isDir: boolean,
+): Promise<BoolResult> {
+  return new Promise((resolve) => {
+    injectStyles()
+
+    const overlay = document.createElement('div')
+    overlay.className = 'custom-dialog-overlay'
+
+    const box = document.createElement('div')
+    box.className = 'custom-dialog-box'
+
+    const titleEl = document.createElement('div')
+    titleEl.className = 'custom-dialog-title'
+    titleEl.innerHTML = `<span class="custom-dialog-icon">🗑️</span>${isDir ? '删除文件夹' : '删除文档'}`
+
+    const messageEl = document.createElement('div')
+    messageEl.className = 'custom-dialog-message'
+    const safeName = filename || (isDir ? '该文件夹' : '该文件')
+    messageEl.textContent = isDir
+      ? `确定删除文件夹「${safeName}」及其所有内容？\n此操作将把文件移动到回收站。`
+      : `确定删除文档「${safeName}」？\n此操作将把文件移动到回收站。`
+
+    const buttonsContainer = document.createElement('div')
+    buttonsContainer.className = 'custom-dialog-buttons'
+
+    const cancelBtn = document.createElement('button')
+    cancelBtn.className = 'custom-dialog-button'
+    cancelBtn.textContent = '取消'
+    cancelBtn.onclick = () => close(false)
+
+    const deleteBtn = document.createElement('button')
+    deleteBtn.className = 'custom-dialog-button danger'
+    deleteBtn.textContent = '删除'
+    deleteBtn.onclick = () => close(true)
+
+    buttonsContainer.appendChild(cancelBtn)
+    buttonsContainer.appendChild(deleteBtn)
+
+    box.appendChild(titleEl)
+    box.appendChild(messageEl)
+    box.appendChild(buttonsContainer)
+    overlay.appendChild(box)
+    document.body.appendChild(overlay)
+
+    setTimeout(() => deleteBtn.focus(), 50)
+
+    function close(result: BoolResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close(false)
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        close(false)
         document.removeEventListener('keydown', handleKeyDown)
       }
     }

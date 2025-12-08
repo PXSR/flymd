@@ -39,19 +39,20 @@ fn dispatch_open_file_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: 
   if !is_supported_doc_path(path) {
     return;
   }
-  if let Some(win) = app.get_webview_window("main") {
-    let path_str = path.to_string_lossy().to_string();
-    // 同时把路径写入共享状态，前端可在启动后主动拉取
-    if let Some(state) = app.try_state::<PendingOpenPath>() {
-      if let Ok(mut slot) = state.0.lock() {
-        *slot = Some(path_str.clone());
-      }
+  let path_str = path.to_string_lossy().to_string();
+  // 先写入共享状态：即便当前窗口尚未创建，前端仍可在启动后通过 get_pending_open_path 主动拉取
+  if let Some(state) = app.try_state::<PendingOpenPath>() {
+    if let Ok(mut slot) = state.0.lock() {
+      *slot = Some(path_str.clone());
     }
-    // 延迟发送事件，确保渲染侧事件监听已注册
+  }
+  // 若主窗口已存在，则主动发送 open-file 事件；否则仅依赖前端兜底拉取
+  if let Some(win) = app.get_webview_window("main") {
     let win_clone = win.clone();
+    let path_clone = path_str.clone();
     std::thread::spawn(move || {
       std::thread::sleep(std::time::Duration::from_millis(500));
-      let _ = win_clone.emit("open-file", path_str);
+      let _ = win_clone.emit("open-file", path_clone);
       let _ = win_clone.set_focus();
     });
   }

@@ -34,6 +34,19 @@ fn is_supported_doc_path(path: &std::path::Path) -> bool {
   }
 }
 
+// 判定是否为 Markdown 类文本（供插件扫描使用，不包含 PDF）
+fn is_markdown_like_path(path: &std::path::Path) -> bool {
+  use std::path::Path;
+  let p: &Path = path;
+  if !p.exists() {
+    return false;
+  }
+  match p.extension().and_then(|s| s.to_str()).map(|s| s.to_ascii_lowercase()) {
+    Some(ext) => ext == "md" || ext == "markdown" || ext == "txt",
+    None => false,
+  }
+}
+
 // 统一的“打开方式/默认程序”事件分发：写入 PendingOpenPath，并向前端发送 open-file 事件
 fn dispatch_open_file_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: &std::path::Path) {
   if !is_supported_doc_path(path) {
@@ -361,6 +374,46 @@ async fn http_xmlrpc_post(req: XmlHttpReq) -> Result<String, String> {
   Ok(text)
 }
 
+// 为插件提供的“全库 Markdown 扫描”命令：在给定根目录下递归枚举所有 md/markdown/txt 文件
+#[tauri::command]
+async fn flymd_list_markdown_files(root: String) -> Result<Vec<String>, String> {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+
+  let root_path = PathBuf::from(root.clone());
+  if !root_path.is_dir() {
+    return Err(format!("root 不是有效目录: {}", root));
+  }
+
+  // 在后台线程递归遍历，避免阻塞 async runtime
+  let result = tauri::async_runtime::spawn_blocking(move || {
+    fn walk_dir(dir: &Path, acc: &mut Vec<String>) -> Result<(), String> {
+      let entries = fs::read_dir(dir)
+        .map_err(|e| format!("read_dir error ({}): {}", dir.display(), e))?;
+      for entry in entries {
+        let entry = entry.map_err(|e| format!("read_dir entry error: {e}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+          walk_dir(&path, acc)?;
+        } else if crate::is_markdown_like_path(&path) {
+          if let Some(s) = path.to_str() {
+            acc.push(s.to_string());
+          }
+        }
+      }
+      Ok(())
+    }
+
+    let mut acc = Vec::<String>::new();
+    walk_dir(&root_path, &mut acc)?;
+    Ok::<Vec<String>, String>(acc)
+  })
+  .await
+  .map_err(|e| format!("join error: {e}"))??;
+
+  Ok(result)
+}
+
 fn main() {
   #[cfg(target_os = "linux")]
   init_linux_render_env();
@@ -387,6 +440,7 @@ fn main() {
       write_text_file_any,
       get_pending_open_path,
       http_xmlrpc_post,
+      flymd_list_markdown_files,
       check_update,
       download_file,
       git_status_summary,

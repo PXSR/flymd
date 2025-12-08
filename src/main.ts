@@ -582,8 +582,26 @@ async function importPortableBackupSilent(): Promise<boolean> {
 
 async function maybeAutoImportPortableBackup(): Promise<void> {
   try {
-    if (!(await isPortableModeEnabled())) return
-    await importPortableBackupSilent()
+    // 1) 若不存在便携备份文件，直接跳过
+    const payload = await readPortableBackupPayload()
+    if (!payload) return
+
+    // 2) 读取当前是否开启了便携模式
+    const portableEnabled = await isPortableModeEnabled()
+
+    // 3) 检查当前配置中是否已有库配置（用于判断是否为“新环境首次运行”）
+    let hasLibraries = false
+    try {
+      const libs = await getLibraries()
+      hasLibraries = Array.isArray(libs) && libs.length > 0
+    } catch {}
+
+    // 4) 触发自动导入的条件：
+    //    - 情况 A：用户明确开启了便携模式（原有行为，保持不变）；
+    //    - 情况 B：当前环境尚无库配置，但发现了便携备份（新机器首次运行单文件版时，自动从便携备份恢复）。
+    if (!portableEnabled && hasLibraries) return
+
+    await restoreConfigFromPayload(payload)
   } catch (err) {
     console.warn('[Portable] 自动导入异常', err)
   }

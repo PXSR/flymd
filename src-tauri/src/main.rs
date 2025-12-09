@@ -1389,16 +1389,33 @@ async fn get_platform() -> Result<String, String> {
 }
 
 fn match_macos_assets(assets: &[GhAsset]) -> (Option<&GhAsset>, Option<&GhAsset>) {
-  // 返回 (x64, arm64)
+  // 返回 (x64, arm64)；优先使用 macOS 专用包，避免误选 Windows 便携 ZIP
   let mut x64: Option<&GhAsset> = None;
   let mut arm: Option<&GhAsset> = None;
   for a in assets {
     let n = a.name.to_ascii_lowercase();
-    // 仅考虑 macOS 常见包后缀
-    let is_macos_pkg = n.ends_with(".dmg") || n.ends_with(".pkg") || n.ends_with(".zip");
+    // 仅考虑 macOS 常见包后缀：
+    // - .dmg / .pkg：安装包
+    // - .app.zip：打包后的 .app（避免把 Windows 便携版 zip 当成 mac 包）
+    let is_macos_pkg = n.ends_with(".dmg") || n.ends_with(".pkg") || n.ends_with(".app.zip");
     if !is_macos_pkg { continue; }
-    if (n.contains("arm64") || n.contains("aarch64")) && arm.is_none() { arm = Some(a); continue; }
-    if (n.contains("x86_64") || n.contains("x64") || n.contains("amd64")) && x64.is_none() { x64 = Some(a); continue; }
+
+    // 通用（universal）包：同时填充 x64 / arm，前端统一走“立即更新”
+    let is_universal = n.contains("universal");
+    if is_universal {
+      if x64.is_none() { x64 = Some(a); }
+      if arm.is_none() { arm = Some(a); }
+      continue;
+    }
+
+    if (n.contains("arm64") || n.contains("aarch64")) && arm.is_none() {
+      arm = Some(a);
+      continue;
+    }
+    if (n.contains("x86_64") || n.contains("x64") || n.contains("amd64")) && x64.is_none() {
+      x64 = Some(a);
+      continue;
+    }
   }
   (x64, arm)
 }

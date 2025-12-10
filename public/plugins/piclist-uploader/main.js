@@ -3,6 +3,7 @@
 
 const STORAGE_KEY = 'piclistUploaderConfig_v1'
 let _settingsRoot = null
+let _globalContext = null
 const DEBUG = true
 
 function debugLog(...args) {
@@ -204,11 +205,13 @@ async function uploadViaPicList(context, absPath) {
     try {
       debugLog('uploadViaPicList: using backend command flymd_piclist_upload')
       const urlFromCmd = await context.invoke('flymd_piclist_upload', {
-        host: base,
-        key: cfg.key || '',
-        picbed: cfg.picbed || '',
-        configName: cfg.configName || '',
-        path: absPath,
+        req: {
+          host: base,
+          key: cfg.key || '',
+          picbed: cfg.picbed || '',
+          configName: cfg.configName || '',
+          path: absPath,
+        },
       })
       if (typeof urlFromCmd === 'string' && urlFromCmd.trim()) {
         const finalUrl = urlFromCmd.trim()
@@ -420,6 +423,19 @@ function bindAutoUploadOnPaste(context) {
 }
 
 export async function activate(context) {
+  _globalContext = context
+  try {
+    if (typeof window !== 'undefined') {
+      // 提供给宿主（所见模式）调用的全局钩子：在 WYSIWYG 每次写回 Markdown 后触发自动上传
+      const anyWin = /** @type {any} */ (window)
+      anyWin.flymdPiclistAutoUpload = () => {
+        if (_globalContext) {
+          autoUploadNewPastedImages(_globalContext).catch(() => {})
+        }
+      }
+    }
+  } catch {}
+
   debugLog('activate: PicList uploader plugin activated')
   context.ui.notice && context.ui.notice('PicList 图床插件已激活', 'ok', 2000)
 

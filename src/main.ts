@@ -1809,6 +1809,11 @@ async function setWysiwygEnabled(enable: boolean) {
               dirty = true
               refreshTitle()
               refreshStatus()
+              // 通知 PicList 插件：有新的 Markdown 内容（可能包含粘贴图片）
+              try {
+                const fn = (window as any).flymdPiclistAutoUpload
+                if (typeof fn === 'function') fn()
+              } catch {}
             }
           } catch {}
         })

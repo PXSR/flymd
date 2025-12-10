@@ -1,0 +1,12 @@
+{
+  "id": "s3-gallery",
+  "name": "S3 图床相册",
+  "version": "0.1.0",
+  "author": "flyMD",
+  "description": "查看并管理通过内置 S3/R2 图床上传的图片，支持复制链接、插入当前文档以及删除远端对象。",
+  "main": "main.js",
+  "minHostVersion": "0.3.0",
+  "homepage": "https://github.com/flyhunterl/flymd",
+  "repository": "https://github.com/flyhunterl/flymd"
+}
+

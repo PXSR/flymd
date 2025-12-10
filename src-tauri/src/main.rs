@@ -128,6 +128,47 @@ struct UploadResp {
   public_url: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct UploadedImageRecord {
+  id: String,
+  bucket: String,
+  key: String,
+  public_url: String,
+  uploaded_at: String,
+  #[serde(default)]
+  file_name: Option<String>,
+  #[serde(default)]
+  content_type: Option<String>,
+  #[serde(default)]
+  size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploaderDeleteReq {
+  access_key_id: String,
+  secret_access_key: String,
+  bucket: String,
+  #[serde(default)]
+  region: Option<String>,
+  #[serde(default)]
+  endpoint: Option<String>,
+  #[serde(default)]
+  force_path_style: Option<bool>,
+  #[serde(default)]
+  custom_domain: Option<String>,
+  key: String,
+}
+
+fn uploader_history_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+  let mut dir = app
+    .path()
+    .app_config_dir()
+    .map_err(|e| format!("app_config_dir error: {e}"))?;
+  dir.push("uploader-history.json");
+  Ok(dir)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PresignReq {
@@ -345,6 +386,132 @@ async fn presign_put(req: PresignReq) -> Result<PresignResp, String> {
   Ok(PresignResp { put_url: base_url.to_string(), public_url })
 }
 
+// S3/R2 上传历史管理：仅记录非敏感元数据，便于前端插件查看与删除
+#[tauri::command]
+async fn flymd_record_uploaded_image(app: tauri::AppHandle, record: UploadedImageRecord) -> Result<(), String> {
+  use std::fs;
+
+  let path = uploader_history_path(&app)?;
+  tauri::async_runtime::spawn_blocking(move || {
+    if let Some(parent) = path.parent() {
+      fs::create_dir_all(parent).map_err(|e| format!("create_dir_all error: {e}"))?;
+    }
+    let mut list: Vec<UploadedImageRecord> = match fs::read_to_string(&path) {
+      Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+      Err(_) => Vec::new(),
+    };
+    // 去重：同 bucket/key/public_url 仅保留最新一条
+    if let Some(pos) = list
+      .iter()
+      .position(|x| x.bucket == record.bucket && x.key == record.key && x.public_url == record.public_url)
+    {
+      list.remove(pos);
+    }
+    list.push(record);
+    const MAX_ITEMS: usize = 2000;
+    if list.len() > MAX_ITEMS {
+      let drop_n = list.len() - MAX_ITEMS;
+      list.drain(0..drop_n);
+    }
+    let json = serde_json::to_string_pretty(&list).map_err(|e| format!("serialize error: {e}"))?;
+    fs::write(&path, json.as_bytes()).map_err(|e| format!("write error: {e}"))?;
+    Ok::<(), String>(())
+  })
+  .await
+  .map_err(|e| format!("join error: {e}"))??;
+
+  Ok(())
+}
+
+#[tauri::command]
+async fn flymd_list_uploaded_images(app: tauri::AppHandle) -> Result<Vec<UploadedImageRecord>, String> {
+  use std::fs;
+
+  let path = uploader_history_path(&app)?;
+  let list = tauri::async_runtime::spawn_blocking(move || {
+    if !path.exists() {
+      return Ok::<Vec<UploadedImageRecord>, String>(Vec::new());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("read error: {e}"))?;
+    let mut list: Vec<UploadedImageRecord> = serde_json::from_str(&text).unwrap_or_default();
+    // 按时间倒序返回（新上传在前）
+    list.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
+    Ok(list)
+  })
+  .await
+  .map_err(|e| format!("join error: {e}"))??;
+
+  Ok(list)
+}
+
+#[tauri::command]
+async fn flymd_delete_uploaded_image(app: tauri::AppHandle, req: UploaderDeleteReq) -> Result<(), String> {
+  // 1) 使用当前配置删除远端对象
+  use aws_config::meta::region::RegionProviderChain;
+  use aws_sdk_s3 as s3;
+  use s3::config::Region;
+
+  let region_str = req.region.clone().unwrap_or_else(|| "us-east-1".to_string());
+  let region = Region::new(region_str.clone());
+  let region_provider = RegionProviderChain::first_try(region.clone());
+  let base_conf = aws_config::defaults(aws_config::BehaviorVersion::latest())
+    .region(region_provider)
+    .load()
+    .await;
+
+  let creds = s3::config::Credentials::new(
+    req.access_key_id.clone(),
+    req.secret_access_key.clone(),
+    None,
+    None,
+    "flymd",
+  );
+  let mut conf_builder = s3::config::Builder::from(&base_conf)
+    .credentials_provider(creds)
+    .force_path_style(req.force_path_style.unwrap_or(true));
+  if let Some(ep) = &req.endpoint {
+    if !ep.trim().is_empty() {
+      conf_builder = conf_builder.endpoint_url(ep.trim());
+    }
+  }
+  let conf = conf_builder.build();
+  let client = s3::Client::from_conf(conf);
+
+  client
+    .delete_object()
+    .bucket(req.bucket.clone())
+    .key(req.key.clone())
+    .send()
+    .await
+    .map_err(|e| format!("delete_object error: {e}"))?;
+
+  // 2) 本地历史中移除对应记录（按 bucket+key 匹配）
+  use std::fs;
+
+  let path = uploader_history_path(&app)?;
+  let bucket = req.bucket.clone();
+  let key = req.key.clone();
+  tauri::async_runtime::spawn_blocking(move || {
+    if !path.exists() {
+      return Ok::<(), String>(());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("read error: {e}"))?;
+    let mut list: Vec<UploadedImageRecord> = serde_json::from_str(&text).unwrap_or_default();
+    let before = list.len();
+    list.retain(|r| !(r.bucket == bucket && r.key == key));
+    if list.len() != before {
+      let json = serde_json::to_string_pretty(&list).map_err(|e| format!("serialize error: {e}"))?;
+      fs::write(&path, json.as_bytes()).map_err(|e| format!("write error: {e}"))?;
+    }
+    Ok(())
+  })
+  .await
+  .map_err(|e| format!("join error: {e}"))??;
+
+  Ok(())
+}
+
+
 #[derive(Debug, Deserialize)]
 struct XmlHttpReq {
   url: String,
@@ -525,13 +692,16 @@ fn main() {
 
   let builder = builder
     .invoke_handler(tauri::generate_handler![
-      upload_to_s3,
-      presign_put,
-      move_to_trash,
-      force_remove_path,
-      read_text_file_any,
-      write_text_file_any,
-      get_pending_open_path,
+        upload_to_s3,
+        presign_put,
+        flymd_record_uploaded_image,
+        flymd_list_uploaded_images,
+        flymd_delete_uploaded_image,
+        move_to_trash,
+        force_remove_path,
+        read_text_file_any,
+        write_text_file_any,
+        get_pending_open_path,
       http_xmlrpc_post,
       flymd_piclist_upload,
       flymd_list_markdown_files,

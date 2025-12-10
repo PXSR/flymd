@@ -255,7 +255,7 @@
     },
     {
       "homepage": "https://github.com/flyhunterl/flymd",
-      "name": "富文本悬浮工具条",
+      "name": "智能悬浮工具条",
       "description": "提供可拖拽且可吸附到顶部的悬浮工具条，并支持自定义标题快捷键等编辑增强功能。",
       "author": "flyMD",
       "id": "floating-toolbar",

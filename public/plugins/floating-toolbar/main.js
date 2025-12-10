@@ -741,7 +741,7 @@ function applyImage(context) {
 export async function openSettings(context) {
   await loadPrefs(context);
 
-  const headingHotkeys = { ...(state.prefs.headingHotkeys || DEFAULT_HEADING_HOTKEYS) };
+  let headingHotkeys = { ...(state.prefs.headingHotkeys || DEFAULT_HEADING_HOTKEYS) };
 
   const overlay = document.createElement('div');
   overlay.style.position = 'fixed';
@@ -805,9 +805,16 @@ export async function openSettings(context) {
       <input id="ft-key-h6" type="text" readonly
         style="width:100%;padding:3px 6px;border-radius:4px;border:1px solid #ddd;box-sizing:border-box;cursor:pointer;">
     </div>
-    <div style="margin-top:14px;text-align:right;">
-      <button id="ft-cancel" style="margin-right:8px;padding:4px 10px;border-radius:4px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;">取消</button>
-      <button id="ft-save" style="padding:4px 12px;border-radius:4px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;">保存</button>
+    <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <button id="ft-reset-keys" style="padding:4px 10px;border-radius:4px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;font-size:12px;">
+          重置标题快捷键
+        </button>
+      </div>
+      <div style="text-align:right;">
+        <button id="ft-cancel" style="margin-right:8px;padding:4px 10px;border-radius:4px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;">取消</button>
+        <button id="ft-save" style="padding:4px 12px;border-radius:4px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;">保存</button>
+      </div>
     </div>
   `;
 
@@ -828,6 +835,22 @@ export async function openSettings(context) {
         input.value = hotkeyToLabel(original);
         panel.removeEventListener('keydown', onKey, true);
         input.blur();
+        return;
+      }
+
+      // 仅按下 Ctrl/Shift/Alt/Meta 时不立即记录，等待下一次按键
+      const modifierCodes = new Set([
+        'ControlLeft',
+        'ControlRight',
+        'ShiftLeft',
+        'ShiftRight',
+        'AltLeft',
+        'AltRight',
+        'MetaLeft',
+        'MetaRight'
+      ]);
+      if (modifierCodes.has(e.code)) {
+        // 继续保持录制状态
         return;
       }
 
@@ -872,6 +895,18 @@ export async function openSettings(context) {
     input.value = hotkeyToLabel(hotkey);
     input.addEventListener('click', () => startRecord(id, input));
   });
+
+  const resetBtn = $('#ft-reset-keys');
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      headingHotkeys = { ...DEFAULT_HEADING_HOTKEYS };
+      HEADING_IDS.forEach((id) => {
+        const input = $(`#ft-key-${id}`);
+        if (input) input.value = hotkeyToLabel(headingHotkeys[id]);
+      });
+      context.ui.notice('标题快捷键已重置为默认值，点击保存以生效', 'ok');
+    };
+  }
 
   $('#ft-cancel').onclick = () => {
     document.body.removeChild(overlay);

@@ -322,6 +322,78 @@ export function createPluginHost(
       }
     }
 
+    // 计算源码编辑器中当前光标（selectionEnd）在视口中的大致矩形
+    const getSourceCaretRectForPlugin = () => {
+      try {
+        const ed = deps.getEditor()
+        if (!ed) return null
+
+        const value = String(ed.value || '')
+        const caret = ed.selectionEnd >>> 0
+        const before = value.slice(0, caret)
+        const lines = before.split('\n')
+        const lineIdx = Math.max(0, lines.length - 1)
+        const colStr = lines[lineIdx] || ''
+
+        const style = window.getComputedStyle(ed)
+        let lh = parseFloat(style.lineHeight || '')
+        if (!lh || Number.isNaN(lh)) {
+          const fs = parseFloat(style.fontSize || '14') || 14
+          lh = fs * 1.6
+        }
+        const padTop = parseFloat(style.paddingTop || '0') || 0
+        const padLeft = parseFloat(style.paddingLeft || '0') || 0
+
+        // 制表符按 4 个空格估算列数
+        const tab4 = (s: string) => s.replace(/\t/g, '    ')
+        const colLen = tab4(colStr).length
+
+        // 估算单字符宽度
+        const measureCharWidth = () => {
+          try {
+            const font = `${style.fontStyle} ${style.fontVariant} ${style.fontWeight} ${style.fontSize} / ${style.lineHeight} ${style.fontFamily}`
+            const cacheKey = font || 'default'
+            const anyFn = measureCharWidth as any
+            anyFn._cache = anyFn._cache || {}
+            const cache = anyFn._cache as Record<string, number>
+            if (cache[cacheKey] && cache[cacheKey] > 0) return cache[cacheKey]
+            const canvas = anyFn._canvas || document.createElement('canvas')
+            anyFn._canvas = canvas
+            const ctx = canvas.getContext('2d')
+            if (!ctx) return cache[cacheKey] || 8
+            ctx.font = font
+            const w = ctx.measureText('0').width
+            if (w && w > 0) cache[cacheKey] = w
+            return cache[cacheKey] || 8
+          } catch {
+            return 8
+          }
+        }
+
+        const ch = measureCharWidth()
+        const edRect = ed.getBoundingClientRect()
+
+        const relTop = padTop + lineIdx * lh - ed.scrollTop
+        const relLeft = padLeft + colLen * ch - ed.scrollLeft
+
+        const top = edRect.top + relTop
+        const left = edRect.left + relLeft
+        const height = lh
+        const width = Math.max(1, ch)
+
+        return {
+          top,
+          left,
+          bottom: top + height,
+          right: left + width,
+          width,
+          height,
+        }
+      } catch {
+        return null
+      }
+    }
+
     const getLineTextForPlugin = (lineNumber: number): string => {
       try {
         const n = Number(lineNumber)
@@ -601,6 +673,7 @@ export function createPluginHost(
       },
       getSelection: () => getSourceSelectionForPlugin(),
       getSelectedMarkdown: () => getSourceSelectionForPlugin().text,
+      getSourceCaretRect: () => getSourceCaretRectForPlugin(),
       getSourceText: () => getSourceTextForPlugin(),
       getFrontMatterRaw: () => getFrontMatterForPlugin(),
       getDocBody: () => getDocBodyForPlugin(),

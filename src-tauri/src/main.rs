@@ -155,8 +155,6 @@ struct UploaderDeleteReq {
   endpoint: Option<String>,
   #[serde(default)]
   force_path_style: Option<bool>,
-  #[serde(default)]
-  custom_domain: Option<String>,
   key: String,
 }
 

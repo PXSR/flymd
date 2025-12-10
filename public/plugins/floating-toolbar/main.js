@@ -369,6 +369,27 @@ function hasTextSelection() {
 }
 
 function getSelectionRect() {
+  // 1) 源码模式：优先使用宿主提供的光标位置 API
+  try {
+    const ctx = state.context;
+    if (ctx && typeof ctx.getSourceCaretRect === 'function') {
+      const r = ctx.getSourceCaretRect();
+      if (r && typeof r.top === 'number' && typeof r.left === 'number') {
+        return {
+          top: r.top,
+          left: r.left,
+          bottom: r.bottom,
+          right: r.right,
+          width: r.width,
+          height: r.height
+        };
+      }
+    }
+  } catch {
+    // 忽略宿主 API 错误，回退到 DOM Selection
+  }
+
+  // 2) 所见/预览模式：使用 DOM Selection 的矩形
   try {
     const sel = window.getSelection && window.getSelection();
     if (!sel || sel.rangeCount === 0) return null;

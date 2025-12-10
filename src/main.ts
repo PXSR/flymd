@@ -8288,10 +8288,19 @@ function bindEvents() {
 
       if (wantSave) {
         try {
-          if (!currentFilePath) await saveAs()
-          else await saveFile()
-          // 保存成功
-          shouldExit = true
+          const wasDirty = dirty
+          if (!currentFilePath) {
+            await saveAs()
+          } else {
+            await saveFile()
+          }
+          // 仅当 dirty 从 true 变为 false 时视为保存成功；
+          // 如果用户在文件选择器中点击了“取消”或保存失败，保持窗口不退出
+          if (wasDirty && !dirty) {
+            shouldExit = true
+          } else {
+            shouldExit = false
+          }
         } catch (e) {
           showError('保存失败', e)
           shouldExit = false

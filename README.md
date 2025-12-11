@@ -167,9 +167,10 @@ FlyMD 拥有丰富的插件生态,支持通过扩展插件无限扩展功能。
 - **AutoYAML元数据** - 自动为当前文档补全 YAML 前置信息，可选调用 AI 助手生成标签和摘要
 
 **博客发布**:
+- **Typecho 博文管理** - typecho博客本地解决方案，本地发布/管理博文，带快照回滚
 - **Typecho Publisher** - 一键发布到 Typecho 博客
 - **Halo Publisher** - 一键发布到 Halo 博客平台
-- **Typecho 博文管理** - 拉取博文列表并下载为本地 Markdown,支持按时间/分类筛选
+
 
 **效率工具**:
 - **Markdown 表格助手** - 在光标处快速插入 Markdown 表格

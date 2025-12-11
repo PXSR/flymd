@@ -200,6 +200,117 @@ function guessTitleFromBody(body) {
   return (m && m[1] && String(m[1]).trim()) || ''
 }
 
+// 从 YAML front matter 中提取 tags 元数据（只处理常见格式，避免额外依赖）
+function extractTagsFromFrontMatter(text) {
+  try {
+    const raw = String(text || '')
+    if (!raw.trim()) return []
+
+    // 处理 BOM，避免开头的 --- 被吃掉
+    let s = raw
+    if (s.charCodeAt(0) === 0xfeff) {
+      s = s.slice(1)
+    }
+
+    const lines = s.split(/\r?\n/)
+    if (!lines.length || lines[0].trim() !== '---') return []
+
+    let endIndex = -1
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---') {
+        endIndex = i
+        break
+      }
+    }
+    if (endIndex === -1) return []
+
+    const fmLines = lines.slice(1, endIndex)
+    let tags = []
+
+    for (let i = 0; i < fmLines.length; i++) {
+      const line = String(fmLines[i] || '')
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (!/^tags\s*:/.test(trimmed)) continue
+
+      const colonIdx = trimmed.indexOf(':')
+      const after = trimmed.slice(colonIdx + 1).trim()
+
+      if (after) {
+        // 单行形式：tags: [a, b] / tags: foo
+        if (after.startsWith('[') && after.endsWith(']')) {
+          const inner = after.slice(1, -1)
+          const parts = inner.split(',')
+          for (let part of parts) {
+            let v = String(part || '').trim()
+            if (!v) continue
+            if (
+              (v.startsWith('"') && v.endsWith('"')) ||
+              (v.startsWith("'") && v.endsWith("'"))
+            ) {
+              v = v.slice(1, -1)
+            }
+            v = v.trim()
+            if (v) tags.push(v)
+          }
+        } else {
+          let v = after
+          if (
+            (v.startsWith('"') && v.endsWith('"')) ||
+            (v.startsWith("'") && v.endsWith("'"))
+          ) {
+            v = v.slice(1, -1)
+          }
+          v = v.trim()
+          if (v) tags.push(v)
+        }
+      } else {
+        // 多行列表形式：
+        // tags:
+        //   - a
+        //   - b
+        for (let j = i + 1; j < fmLines.length; j++) {
+          const l2 = String(fmLines[j] || '')
+          const t2 = l2.trim()
+          if (!t2) break
+          const m = t2.match(/^-\s*(.+)\s*$/)
+          if (!m) break
+          let v = m[1] || ''
+          v = String(v).trim()
+          if (
+            (v.startsWith('"') && v.endsWith('"')) ||
+            (v.startsWith("'") && v.endsWith("'"))
+          ) {
+            v = v.slice(1, -1)
+          }
+          v = v.trim()
+          if (v) tags.push(v)
+        }
+      }
+
+      // 只处理第一个 tags 字段
+      break
+    }
+
+    if (!tags.length) return []
+
+    // 去重并清洗
+    const seen = new Set()
+    const out = []
+    for (const t of tags) {
+      const s2 = String(t || '').trim()
+      if (!s2) continue
+      const key = s2.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(s2)
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
 // 根据路径得到文件名（不含扩展名）
 function getDocNameFromPath(path) {
   if (!path) return ''
@@ -644,7 +755,23 @@ async function rebuildIndex(context) {
     const docName = getDocNameFromPath(path)
     const titleFromBody = guessTitleFromBody(text)
     const title = titleFromBody || docName
+    const tags = extractTagsFromFrontMatter(text)
     const info = { path, name: docName, title }
+    if (tags && tags.length) {
+      const seen = new Set()
+      const cleaned = []
+      for (const t of tags) {
+        const s = String(t || '').trim()
+        if (!s) continue
+        const key = s.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        cleaned.push(s)
+      }
+      if (cleaned.length) {
+        info.tags = cleaned
+      }
+    }
 
     // 特判：PDF 原文 / PDF 翻译 成对文档，自动建立“兄弟关系”
     // 例如：deepseek (PDF 原文).md / deepseek (PDF 翻译).md
@@ -848,10 +975,54 @@ function getBacklinksForCurrent(context) {
   const norm = normalizePath(path)
   if (!norm) return []
 
+  const resultKeys = new Set()
+
+  // 1）经典反向链接：谁显式 [[链接]] 到当前文档
   const fromSet = indexState.backward.get(norm)
-  if (!fromSet || !fromSet.size) return []
+  if (fromSet && fromSet.size) {
+    for (const k of fromSet.values()) {
+      if (!k || typeof k !== 'string') continue
+      resultKeys.add(k)
+    }
+  }
+
+  // 2）同标签文档：基于 YAML front matter 里的 tags 元数据
+  const selfInfo = indexState.docs.get(norm)
+  const selfTags = selfInfo && Array.isArray(selfInfo.tags) ? selfInfo.tags : []
+  if (selfTags && selfTags.length) {
+    const tagSet = new Set()
+    for (const t of selfTags) {
+      const s = String(t || '').trim()
+      if (!s) continue
+      tagSet.add(s.toLowerCase())
+    }
+    if (tagSet.size) {
+      for (const [key, info] of indexState.docs.entries()) {
+        if (!key || key === norm) continue
+        if (resultKeys.has(key)) continue
+        if (!info) continue
+        const docTags = Array.isArray(info.tags) ? info.tags : []
+        if (!docTags.length) continue
+        let hit = false
+        for (const t of docTags) {
+          const s = String(t || '').trim()
+          if (!s) continue
+          if (tagSet.has(s.toLowerCase())) {
+            hit = true
+            break
+          }
+        }
+        if (hit) {
+          resultKeys.add(key)
+        }
+      }
+    }
+  }
+
+  if (!resultKeys.size) return []
+
   const items = []
-  for (const srcKey of fromSet.values()) {
+  for (const srcKey of resultKeys.values()) {
     const info = indexState.docs.get(srcKey) || {}
     const realPath = info.path || srcKey
     items.push({
@@ -890,7 +1061,49 @@ function updateIndexForCurrentDocIfNeeded(context) {
   const docName = getDocNameFromPath(path)
   const titleFromBody = guessTitleFromBody(text)
   const title = titleFromBody || docName
+
+  // 優先通过宿主提供的元数据 API 读取 tags，失败时回退到解析 front matter
+  let tags = []
+  try {
+    if (typeof context.getDocMeta === 'function') {
+      const meta = context.getDocMeta() || {}
+      let rawTags = meta.tags || meta.keywords || []
+      if (Array.isArray(rawTags)) {
+        for (let t of rawTags) {
+          const s = String(t || '').trim()
+          if (s) tags.push(s)
+        }
+      } else if (typeof rawTags === 'string') {
+        const parts = rawTags.split(',')
+        for (let p of parts) {
+          const s = String(p || '').trim()
+          if (s) tags.push(s)
+        }
+      }
+    }
+  } catch {
+    // 忽略元数据解析异常，防止影响正常索引
+  }
+  if (!tags || !tags.length) {
+    tags = extractTagsFromFrontMatter(text)
+  }
+
   const info = { path, name: docName, title }
+  if (tags && tags.length) {
+    const seen = new Set()
+    const cleaned = []
+    for (const t of tags) {
+      const s = String(t || '').trim()
+      if (!s) continue
+      const key = s.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      cleaned.push(s)
+    }
+    if (cleaned.length) {
+      info.tags = cleaned
+    }
+  }
   docs.set(norm, info)
 
   // 清理旧的出链和对应的反向链接

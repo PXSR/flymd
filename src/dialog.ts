@@ -1,6 +1,9 @@
 /**
- * 自定义三按钮确认对话框
+ * 自定义三按钮确认对话框及相关 WebDAV 同步对话框
+ * 所有用户可见文案统一接入 i18n
  */
+
+import { t } from './i18n'
 
 // 对话框返回值类型
 export type DialogResult = 'save' | 'discard' | 'cancel'
@@ -91,6 +94,7 @@ const dialogStyles = `
   -webkit-app-region: no-drag;
   cursor: pointer;
   border: 1px solid var(--border);
+  background: rgba(127, 127, 127, 127/255 * 0.08);
   background: rgba(127, 127, 127, 0.08);
   color: var(--fg);
   border-radius: 8px;
@@ -152,15 +156,14 @@ function injectStyles() {
 /**
  * 显示三按钮确认对话框
  * @param message 对话框消息
- * @param title 对话框标题
+ * @param title 对话框标题（可选，不传则使用多语言默认标题）
  * @returns Promise<DialogResult> - 'save': 保存并退出, 'discard': 直接退出, 'cancel': 取消
  */
 export function showThreeButtonDialog(
   message: string,
-  title: string = '退出确认'
+  title?: string
 ): Promise<DialogResult> {
   return new Promise((resolve) => {
-    // 注入样式
     injectStyles()
 
     // 创建对话框 DOM
@@ -172,7 +175,8 @@ export function showThreeButtonDialog(
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">ℹ️</span>${title}`
+    const finalTitle = (title && title.trim()) || t('dlg.exit.title')
+    titleEl.innerHTML = `<span class="custom-dialog-icon">ℹ️</span>${finalTitle}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
@@ -184,21 +188,32 @@ export function showThreeButtonDialog(
     // 创建三个按钮
     const cancelBtn = document.createElement('button')
     cancelBtn.className = 'custom-dialog-button'
-    cancelBtn.textContent = '取消'
+    cancelBtn.textContent = t('dlg.cancel')
+
+    const discardBtn = document.createElement('button')
+    discardBtn.className = 'custom-dialog-button danger'
+    discardBtn.textContent = t('dlg.exit.discard')
+
+    const saveBtn = document.createElement('button')
+    saveBtn.className = 'custom-dialog-button primary'
+    saveBtn.textContent = t('dlg.exit.save')
+
+    function closeDialog(result: DialogResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
     cancelBtn.onclick = () => {
       closeDialog('cancel')
     }
 
-    const discardBtn = document.createElement('button')
-    discardBtn.className = 'custom-dialog-button danger'
-    discardBtn.textContent = '直接退出'
     discardBtn.onclick = () => {
       closeDialog('discard')
     }
 
-    const saveBtn = document.createElement('button')
-    saveBtn.className = 'custom-dialog-button primary'
-    saveBtn.textContent = '保存并退出'
     saveBtn.onclick = () => {
       closeDialog('save')
     }
@@ -217,15 +232,6 @@ export function showThreeButtonDialog(
 
     // 聚焦到保存按钮（默认操作）
     setTimeout(() => saveBtn.focus(), 50)
-
-    // 关闭对话框的函数
-    function closeDialog(result: DialogResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     // 点击遮罩层关闭（视为取消）
     overlay.onclick = (e) => {
@@ -267,26 +273,36 @@ export function showLibraryDeleteDialog(
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">🗑️</span>${isDir ? '删除文件夹' : '删除文档'}`
+    const titleKey = isDir ? 'dlg.libDelete.title.dir' : 'dlg.libDelete.title.file'
+    titleEl.innerHTML = `<span class="custom-dialog-icon">🗑️</span>${t(titleKey as any)}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
-    const safeName = filename || (isDir ? '该文件夹' : '该文件')
-    messageEl.textContent = isDir
-      ? `确定删除文件夹「${safeName}」及其所有内容？\n此操作将把文件移动到回收站。`
-      : `确定删除文档「${safeName}」？\n此操作将把文件移动到回收站。`
+    const nameKey = isDir ? 'dlg.libDelete.name.dir' : 'dlg.libDelete.name.file'
+    const safeName = filename || t(nameKey as any)
+    const msgKey = isDir ? 'dlg.libDelete.msg.dir' : 'dlg.libDelete.msg.file'
+    messageEl.textContent = t(msgKey as any, { name: safeName })
 
     const buttonsContainer = document.createElement('div')
     buttonsContainer.className = 'custom-dialog-buttons'
 
     const cancelBtn = document.createElement('button')
     cancelBtn.className = 'custom-dialog-button'
-    cancelBtn.textContent = '取消'
-    cancelBtn.onclick = () => close(false)
+    cancelBtn.textContent = t('dlg.cancel')
 
     const deleteBtn = document.createElement('button')
     deleteBtn.className = 'custom-dialog-button danger'
-    deleteBtn.textContent = '删除'
+    deleteBtn.textContent = t('dlg.delete')
+
+    function close(result: BoolResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    cancelBtn.onclick = () => close(false)
     deleteBtn.onclick = () => close(true)
 
     buttonsContainer.appendChild(cancelBtn)
@@ -299,14 +315,6 @@ export function showLibraryDeleteDialog(
     document.body.appendChild(overlay)
 
     setTimeout(() => deleteBtn.focus(), 50)
-
-    function close(result: BoolResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     overlay.onclick = (e) => {
       if (e.target === overlay) close(false)
@@ -340,28 +348,37 @@ export function showConflictDialog(filename: string): Promise<ConflictResult> {
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">⚠️</span>文件冲突`
+    titleEl.innerHTML = `<span class="custom-dialog-icon">⚠️</span>${t('dlg.sync.conflict.title')}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
-    messageEl.textContent = `文件：${filename}\n\n本地和远程都已修改此文件。请选择要保留的版本：`
+    messageEl.textContent = t('dlg.sync.conflict.msg', { name: filename })
 
     const buttonsContainer = document.createElement('div')
     buttonsContainer.className = 'custom-dialog-buttons'
 
     const cancelBtn = document.createElement('button')
     cancelBtn.className = 'custom-dialog-button'
-    cancelBtn.textContent = '取消'
-    cancelBtn.onclick = () => closeDialog('cancel')
+    cancelBtn.textContent = t('dlg.cancel')
 
     const remoteBtn = document.createElement('button')
     remoteBtn.className = 'custom-dialog-button'
-    remoteBtn.textContent = '保留远程版本'
-    remoteBtn.onclick = () => closeDialog('remote')
+    remoteBtn.textContent = t('dlg.sync.conflict.remote')
 
     const localBtn = document.createElement('button')
     localBtn.className = 'custom-dialog-button primary'
-    localBtn.textContent = '保留本地版本'
+    localBtn.textContent = t('dlg.sync.conflict.local')
+
+    function closeDialog(result: ConflictResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    cancelBtn.onclick = () => closeDialog('cancel')
+    remoteBtn.onclick = () => closeDialog('remote')
     localBtn.onclick = () => closeDialog('local')
 
     buttonsContainer.appendChild(cancelBtn)
@@ -375,14 +392,6 @@ export function showConflictDialog(filename: string): Promise<ConflictResult> {
     document.body.appendChild(overlay)
 
     setTimeout(() => localBtn.focus(), 50)
-
-    function closeDialog(result: ConflictResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     overlay.onclick = (e) => {
       if (e.target === overlay) closeDialog('cancel')
@@ -416,23 +425,32 @@ export function showLocalDeleteDialog(filename: string): Promise<TwoChoiceResult
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">🗑️</span>文件已删除`
+    titleEl.innerHTML = `<span class="custom-dialog-icon">🗑️</span>${t('dlg.sync.localDelete.title')}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
-    messageEl.textContent = `文件：${filename}\n\n此文件在上次同步后被本地删除。请选择操作：`
+    messageEl.textContent = t('dlg.sync.localDelete.msg', { name: filename })
 
     const buttonsContainer = document.createElement('div')
     buttonsContainer.className = 'custom-dialog-buttons'
 
     const restoreBtn = document.createElement('button')
     restoreBtn.className = 'custom-dialog-button'
-    restoreBtn.textContent = '从远程恢复'
-    restoreBtn.onclick = () => closeDialog('cancel')
+    restoreBtn.textContent = t('dlg.sync.localDelete.restore')
 
     const deleteBtn = document.createElement('button')
     deleteBtn.className = 'custom-dialog-button danger'
-    deleteBtn.textContent = '同步删除远程'
+    deleteBtn.textContent = t('dlg.sync.localDelete.deleteRemote')
+
+    function closeDialog(result: TwoChoiceResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    restoreBtn.onclick = () => closeDialog('cancel')
     deleteBtn.onclick = () => closeDialog('confirm')
 
     buttonsContainer.appendChild(restoreBtn)
@@ -445,14 +463,6 @@ export function showLocalDeleteDialog(filename: string): Promise<TwoChoiceResult
     document.body.appendChild(overlay)
 
     setTimeout(() => deleteBtn.focus(), 50)
-
-    function closeDialog(result: TwoChoiceResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     overlay.onclick = (e) => {
       if (e.target === overlay) closeDialog('cancel')
@@ -486,23 +496,32 @@ export function showRemoteDeleteDialog(filename: string): Promise<TwoChoiceResul
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">⚠️</span>远程文件已删除`
+    titleEl.innerHTML = `<span class="custom-dialog-icon">⚠️</span>${t('dlg.sync.remoteDelete.title')}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
-    messageEl.textContent = `文件：${filename}\n\n此文件在远程服务器上已不存在。请选择操作：`
+    messageEl.textContent = t('dlg.sync.remoteDelete.msg', { name: filename })
 
     const buttonsContainer = document.createElement('div')
     buttonsContainer.className = 'custom-dialog-buttons'
 
     const keepBtn = document.createElement('button')
     keepBtn.className = 'custom-dialog-button'
-    keepBtn.textContent = '保留本地文件'
-    keepBtn.onclick = () => closeDialog('cancel')
+    keepBtn.textContent = t('dlg.sync.remoteDelete.keepLocal')
 
     const deleteBtn = document.createElement('button')
     deleteBtn.className = 'custom-dialog-button danger'
-    deleteBtn.textContent = '同步删除本地'
+    deleteBtn.textContent = t('dlg.sync.remoteDelete.deleteLocal')
+
+    function closeDialog(result: TwoChoiceResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    keepBtn.onclick = () => closeDialog('cancel')
     deleteBtn.onclick = () => closeDialog('confirm')
 
     buttonsContainer.appendChild(keepBtn)
@@ -515,14 +534,6 @@ export function showRemoteDeleteDialog(filename: string): Promise<TwoChoiceResul
     document.body.appendChild(overlay)
 
     setTimeout(() => keepBtn.focus(), 50)
-
-    function closeDialog(result: TwoChoiceResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     overlay.onclick = (e) => {
       if (e.target === overlay) closeDialog('cancel')
@@ -556,23 +567,32 @@ export function showUploadMissingRemoteDialog(filename: string): Promise<TwoChoi
 
     const titleEl = document.createElement('div')
     titleEl.className = 'custom-dialog-title'
-    titleEl.innerHTML = `<span class="custom-dialog-icon">📤</span>上传本地文件到远端`
+    titleEl.innerHTML = `<span class="custom-dialog-icon">📤</span>${t('dlg.sync.uploadMissing.title')}`
 
     const messageEl = document.createElement('div')
     messageEl.className = 'custom-dialog-message'
-    messageEl.textContent = `文件：${filename}\n\n本地存在该文件，但远端当前不存在（可能是新建，也可能是被其他设备删除）。请选择操作：`
+    messageEl.textContent = t('dlg.sync.uploadMissing.msg', { name: filename })
 
     const buttonsContainer = document.createElement('div')
     buttonsContainer.className = 'custom-dialog-buttons'
 
     const keepLocalBtn = document.createElement('button')
     keepLocalBtn.className = 'custom-dialog-button'
-    keepLocalBtn.textContent = '仅保留本地'
-    keepLocalBtn.onclick = () => closeDialog('cancel')
+    keepLocalBtn.textContent = t('dlg.sync.uploadMissing.keepLocal')
 
     const uploadBtn = document.createElement('button')
     uploadBtn.className = 'custom-dialog-button primary'
-    uploadBtn.textContent = '上传到远端'
+    uploadBtn.textContent = t('dlg.sync.uploadMissing.upload')
+
+    function closeDialog(result: TwoChoiceResult) {
+      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
+      setTimeout(() => {
+        overlay.remove()
+        resolve(result)
+      }, 100)
+    }
+
+    keepLocalBtn.onclick = () => closeDialog('cancel')
     uploadBtn.onclick = () => closeDialog('confirm')
 
     buttonsContainer.appendChild(keepLocalBtn)
@@ -585,14 +605,6 @@ export function showUploadMissingRemoteDialog(filename: string): Promise<TwoChoi
     document.body.appendChild(overlay)
 
     setTimeout(() => uploadBtn.focus(), 50)
-
-    function closeDialog(result: TwoChoiceResult) {
-      overlay.style.animation = 'dialogFadeIn 0.1s ease reverse'
-      setTimeout(() => {
-        overlay.remove()
-        resolve(result)
-      }, 100)
-    }
 
     overlay.onclick = (e) => {
       if (e.target === overlay) closeDialog('cancel')

@@ -41,6 +41,35 @@ export interface ExtensionsPanelHost {
 
 let host: ExtensionsPanelHost | null = null
 
+// 官方扩展在市场中的多语言映射（按插件 id → i18n key）
+const MARKET_OFFICIAL_I18N: Record<string, { name: string; author: string; desc: string }> = {
+  'ai-assistant': {
+    name: 'ext.ai.name',
+    author: 'ext.ai.author',
+    desc: 'ext.ai.desc',
+  },
+  'batch-pdf': {
+    name: 'ext.pdf.name',
+    author: 'ext.pdf.author',
+    desc: 'ext.pdf.desc',
+  },
+  'typecho-publisher-flymd': {
+    name: 'ext.typechoPub.name',
+    author: 'ext.typechoPub.author',
+    desc: 'ext.typechoPub.desc',
+  },
+  wordcount: {
+    name: 'ext.wordcount.name',
+    author: 'ext.wordcount.author',
+    desc: 'ext.wordcount.desc',
+  },
+  'xxtui-todo-push': {
+    name: 'ext.todoPush.name',
+    author: 'ext.todoPush.author',
+    desc: 'ext.todoPush.desc',
+  },
+}
+
 // 内置扩展：只在扩展面板中展示，不走远程安装流程
 const builtinPlugins: InstalledPlugin[] = [
   { id: 'uploader-s3', name: '图床 (S3/R2)', version: 'builtin', enabled: undefined, dir: '', main: '', builtin: true, description: '粘贴/拖拽图片自动上传，支持 S3/R2 直连，使用设置中的凭据。' },
@@ -665,8 +694,10 @@ export async function refreshExtensionsUI(): Promise<void> {
 
         const meta = document.createElement('div'); meta.className = 'ext-meta'
         const name = document.createElement('div'); name.className = 'ext-name'
-        const fullName = String(it.name || it.id)
-        try { row.style.order = String(getPluginOrder(String(it.id || ''), fullName)) } catch {}
+        const idStr = String(it.id || '')
+        const official = MARKET_OFFICIAL_I18N[idStr]
+        const fullName = official ? t(official.name as any) : String(it.name || it.id)
+        try { row.style.order = String(getPluginOrder(idStr, fullName)) } catch {}
         const spanName = document.createElement('span')
         spanName.textContent = fullName
         spanName.title = fullName
@@ -684,15 +715,22 @@ export async function refreshExtensionsUI(): Promise<void> {
         } catch {}
 
         const desc = document.createElement('div'); desc.className = 'ext-desc'
-        if (it.description) {
-          const descText = document.createElement('span'); descText.textContent = it.description
+        const descText = document.createElement('span')
+        const descStr = official ? t(official.desc as any) : (it.description ? String(it.description) : '')
+        if (descStr) {
+          descText.textContent = descStr
           desc.appendChild(descText)
         }
-        if (it.author || it.homepage) {
+        if (official || it.author || it.homepage) {
           const spacing = document.createTextNode('  ')
           desc.appendChild(spacing)
-          if (it.author) {
-            const authorSpan = document.createElement('span'); authorSpan.textContent = t('ext.author') + (it.author || '')
+          if (official || it.author) {
+            const authorSpan = document.createElement('span')
+            if (official) {
+              authorSpan.textContent = t(official.author as any)
+            } else {
+              authorSpan.textContent = t('ext.author') + (it.author || '')
+            }
             desc.appendChild(authorSpan)
             if (it.homepage) { desc.appendChild(document.createTextNode(' ')) }
           }

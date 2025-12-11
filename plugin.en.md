@@ -55,6 +55,13 @@ my-plugin/
   "version": "1.0.0",
   "author": "Your Name",
   "description": "Plugin functionality description",
+  // Optional: i18n metadata (recommended)
+  "i18n": {
+    "zh": {
+      "name": "我的插件",
+      "description": "插件功能描述"
+    }
+  },
   "main": "main.js"
 }
 ```
@@ -67,6 +74,9 @@ my-plugin/
 - `description` (optional): Plugin functionality description
 - `main` (required): Plugin entry file, defaults to `main.js`
 - `minHostVersion` (optional): Minimum required flyMD version. Installation will be rejected if user's flyMD version is lower, prompting them to upgrade
+- `i18n` (optional, recommended): Multi-language metadata organized by language code, e.g.:
+  - `i18n.en.name` / `i18n.en.description`: English name and description
+  - Current host versions do not rely on this field yet, but future versions may prefer it when rendering the marketplace in different languages. Pre-populating it makes your plugin more future-proof.
 
 ### 3. Write main.js
 

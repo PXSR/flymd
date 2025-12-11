@@ -1125,7 +1125,7 @@ app.innerHTML = `
       <div class="menu-item" id="btn-save" style="display:none;" title="${t('file.save')} (Ctrl+S)">${t('file.save')}</div>
       <div class="menu-item" id="btn-saveas" style="display:none;" title="${t('file.saveas')} (Ctrl+Shift+S)">${t('file.saveas')}</div>
       <div class="menu-item" id="btn-toggle" style="display:none;" title="${t('mode.edit')}/${t('mode.read')} (Ctrl+E)">${t('mode.read')}</div>
-      <div class="menu-item" id="btn-theme" title="主题">主题</div>
+      <div class="menu-item" id="btn-theme" title="${t('menu.theme.tooltip')}">${t('menu.theme')}</div>
       <div class="menu-item" id="btn-extensions" title="${t('menu.extensions')}">${t('menu.extensions')}</div>
     </div>
     <div class="filename" id="filename">${t('filename.untitled')}</div>
@@ -6363,6 +6363,19 @@ function applyI18nUi() {
       const el = document.getElementById(id) as HTMLDivElement | null
       if (el) { el.textContent = text; el.title = text }
     }
+    // 主题与插件按钮：标题与提示分离
+    try {
+      const themeBtn = document.getElementById('btn-theme') as HTMLDivElement | null
+      if (themeBtn) {
+        themeBtn.textContent = t('menu.theme')
+        themeBtn.title = t('menu.theme.tooltip')
+      }
+      const pluginsBtn = document.getElementById('btn-plugins') as HTMLDivElement | null
+      if (pluginsBtn) {
+        pluginsBtn.textContent = t('menu.plugins')
+        pluginsBtn.title = t('menu.plugins.tooltip')
+      }
+    } catch {}
     // 文件名/状态/编辑器占位
     try { (document.getElementById('editor') as HTMLTextAreaElement | null)?.setAttribute('placeholder', t('editor.placeholder')) } catch {}
     try { refreshTitle() } catch {}
@@ -8187,10 +8200,10 @@ function bindEvents() {
       let shouldExit = false
       let wantSave = false
 
-      // 使用自定义三按钮对话框
+      // 使用自定义三按钮对话框（多语言文案）
       const result = await showThreeButtonDialog(
-        '检测到当前文档有未保存的更改',
-        '退出确认'
+        t('dlg.exit.unsaved'),
+        t('dlg.exit.title')
       )
 
       if (result === 'save') {

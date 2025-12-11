@@ -55,6 +55,13 @@ my-plugin/
   "version": "1.0.0",
   "author": "Your Name",
   "description": "插件功能描述",
+  // 可选：多语言显示名称与描述（推荐）
+  "i18n": {
+    "en": {
+      "name": "My Plugin",
+      "description": "Plugin functionality description"
+    }
+  },
   "main": "main.js"
 }
 ```
@@ -67,6 +74,9 @@ my-plugin/
 - `description`（可选）：插件功能描述
 - `main`（必需）：插件入口文件，默认为 `main.js`
 - `minHostVersion`（可选）：插件要求的 flyMD 最低版本号。如果用户的 flyMD 版本低于此版本，将拒绝安装并提示用户升级
+- `i18n`（可选，推荐）：多语言元数据，按语言代码组织，例如：
+  - `i18n.en.name` / `i18n.en.description`：英文名称与描述
+  - 当前宿主版本不会强制使用该字段，但未来版本会优先读取；提前填写有利于扩展市场在不同语言下展示更友好的文案
 
 ### 3. 编写 main.js
 

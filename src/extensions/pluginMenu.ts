@@ -5,6 +5,8 @@
  * - 顶部菜单栏中的“插件”入口
  */
 
+import { t } from '../i18n'
+
 // 插件菜单项描述
 type PluginMenuItem = { pluginId: string; label: string; onClick?: () => void; children?: any[] }
 
@@ -235,8 +237,9 @@ export function initPluginsMenu() {
     // 创建"插件"菜单按钮
     const pluginsBtn = document.createElement('div')
     pluginsBtn.className = 'menu-item'
-    pluginsBtn.textContent = '插件'
-    pluginsBtn.title = '扩展插件菜单'
+    pluginsBtn.id = 'btn-plugins'
+    pluginsBtn.textContent = t('menu.plugins')
+    pluginsBtn.title = t('menu.plugins.tooltip')
     pluginsBtn.style.display = 'none' // 默认隐藏，有插件时才显示
 
     // 点击展开下拉菜单
@@ -254,8 +257,8 @@ export function initPluginsMenu() {
       } catch (e) { console.error(e) }
     })
 
-    // 插入到扩展按钮之前
-    const extBtn = Array.from(bar.querySelectorAll('.menu-item')).find(el => el.textContent?.includes('扩展'))
+    // 插入到扩展按钮之前（按 id 寻址，避免受多语言影响）
+    const extBtn = bar.querySelector('#btn-extensions') as HTMLDivElement | null
     if (extBtn) {
       bar.insertBefore(pluginsBtn, extBtn)
     } else {

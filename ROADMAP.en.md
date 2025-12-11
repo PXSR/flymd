@@ -3,6 +3,14 @@
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
 
+## Update v0.7.2
+- Added: Official “Graph View” extension that builds a local relationship graph around the current note using the Backlinks index, rendered in a floating panel with clickable nodes and quick entries from the Plugins menu and editor context menu.
+- Added: New “Smart Floating Toolbar” extension that pops up a draggable rich-text toolbar near the selection when you select text, with configurable heading hotkeys (Ctrl+1–6 by default) and quick actions for links, images and formatting.
+- Improved: The floating toolbar can now be configured to “only show when there is a selection”, correctly distinguishes source / WYSIWYG / reading modes (and stays hidden in reading mode), adds a one-click “reset heading hotkeys” option, and uses new host APIs such as `getSourceCaretRect` / `onSelectionChange` so the toolbar can follow the caret precisely in source mode.
+- Improved: The extensions marketplace is now prewarmed in the background when the app goes idle (overlay construction + first full render + market index fetch into the store cache), and category filters operate purely on the locally cached list; combined with cached installed/update state this makes the marketplace open almost instantly without extra network round-trips.
+- Improved: Built-in entries for WebDAV sync and the S3/R2 uploader have been added to the main “Plugins” menu, making it easier to find and manage sync/image-bed settings from a single place.
+- Improved: When you rename or move a file from the library sidebar, any open tabs tracking that file now update their paths and titles accordingly; closing tabs or exiting the app after edits now honours whether the save operation actually cleared the dirty state, so cancelling a “Save As” dialog or hitting a save failure no longer leads to accidental exits.
+
 ## Update v0.7.1
 - Added: New “PicList Uploader” extension that lets you select local image paths or Markdown image syntax in source mode, upload them to a local PicList HTTP server with one click, and replace the selection with the hosted URL; an optional “auto upload after paste” switch can watch pasted `pasted-*` images and automatically upload + rewrite them.
 - Added: PicList uploader is now integrated with WYSIWYG mode via paste/flush hooks so that the same auto-upload pipeline applies while editing visually, keeping behaviour consistent across modes.

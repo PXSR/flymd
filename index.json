@@ -255,6 +255,18 @@
     },
     {
       "homepage": "https://github.com/flyhunterl/flymd",
+      "name": "白板视图",
+      "description": "在可视化画布上摆放 Markdown 笔记节点并建立简单连接。",
+      "author": "flyMD",
+      "id": "whiteboard-view",
+      "category": "知识管理",
+      "install": {
+        "ref": "https://raw.githubusercontent.com/flyhunterl/flymd/main/public/plugins/whiteboard/manifest.json",
+        "type": "manifest"
+      }
+    },
+    {
+      "homepage": "https://github.com/flyhunterl/flymd",
       "name": "智能悬浮工具条",
       "description": "提供可拖拽且可吸附到顶部的悬浮工具条，并支持自定义标题快捷键等编辑增强功能。",
       "author": "flyMD",

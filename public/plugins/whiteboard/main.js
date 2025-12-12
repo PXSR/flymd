@@ -107,6 +107,44 @@ function wbEnsureStyle() {
   align-items: center;
   gap: 6px;
 }
+.wb-mini-shell {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 90041;
+  cursor: grab;
+}
+.wb-mini-title {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.wb-mini-btn {
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  background: rgba(37, 99, 235, 0.28);
+  font-size: 11px;
+  font-weight: 600;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+.wb-mini-btn:hover {
+  background: rgba(59, 130, 246, 0.5);
+  border-color: rgba(191, 219, 254, 1);
+}
 .wb-btn {
   padding: 4px 10px;
   border-radius: 999px;
@@ -347,6 +385,74 @@ function wbEnsureStyle() {
   margin-top: 3px;
   font-size: 11px;
   color: rgba(0, 0, 0, 0.55);
+}
+.wb-board-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.wb-board-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.wb-board-item + .wb-board-item {
+  margin-top: 4px;
+}
+.wb-board-item:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+.wb-board-item-active {
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.45);
+}
+.wb-board-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.wb-board-item-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-board-item-tag {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.wb-board-item-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+}
+.wb-board-action-btn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.wb-board-action-btn:hover {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.8);
+}
+.wb-board-action-btn[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+.wb-board-action-btn-danger {
+  border-color: rgba(248, 113, 113, 0.9);
+  color: #b91c1c;
+}
+.wb-board-action-btn-danger:hover {
+  background: rgba(248, 113, 113, 0.16);
 }
 .wb-settings-footer {
   display: flex;
@@ -890,6 +996,7 @@ async function wbOpenBoardSelectorDialog(context, state) {
 
   const entries = Object.keys(boards).map((id) => ({
     id,
+    rawName: boards[id] && typeof boards[id].name === 'string' ? boards[id].name : '',
     name: boards[id] && typeof boards[id].name === 'string' && boards[id].name.trim()
       ? boards[id].name.trim()
       : wbText('未命名白板', 'Unnamed board'),
@@ -933,17 +1040,48 @@ async function wbOpenBoardSelectorDialog(context, state) {
         if (item.id === activeId) {
           row.classList.add('wb-board-item-active')
         }
-        const spanName = document.createElement('span')
+
+        const left = document.createElement('div')
+        left.className = 'wb-board-item-left'
+        const spanName = document.createElement('div')
+        spanName.className = 'wb-board-item-name'
         spanName.textContent = item.name
-        const spanTag = document.createElement('span')
+        const spanTag = document.createElement('div')
+        spanTag.className = 'wb-board-item-tag'
         spanTag.textContent = item.id === activeId
+          ? wbText('当前白板', 'Current board')
+          : wbText('点击切换为当前白板', 'Click to make this current')
+        left.appendChild(spanName)
+        left.appendChild(spanTag)
+
+        const actions = document.createElement('div')
+        actions.className = 'wb-board-item-actions'
+
+        const btnSwitch = document.createElement('button')
+        btnSwitch.className = 'wb-board-action-btn'
+        btnSwitch.textContent = item.id === activeId
           ? wbText('当前', 'Current')
           : wbText('切换', 'Switch')
-        spanTag.style.fontSize = '11px'
-        spanTag.style.opacity = '0.8'
-        row.appendChild(spanName)
-        row.appendChild(spanTag)
-        row.onclick = () => {
+        if (item.id === activeId) {
+          btnSwitch.disabled = true
+        }
+
+        const btnRename = document.createElement('button')
+        btnRename.className = 'wb-board-action-btn'
+        btnRename.textContent = wbText('重命名', 'Rename')
+
+        const btnDelete = document.createElement('button')
+        btnDelete.className = 'wb-board-action-btn wb-board-action-btn-danger'
+        btnDelete.textContent = wbText('删除', 'Delete')
+
+        actions.appendChild(btnSwitch)
+        actions.appendChild(btnRename)
+        actions.appendChild(btnDelete)
+
+        row.appendChild(left)
+        row.appendChild(actions)
+
+        const doSwitch = () => {
           if (!safeState.boards || !safeState.boards[item.id]) {
             overlay.remove()
             resolve(null)
@@ -957,6 +1095,98 @@ async function wbOpenBoardSelectorDialog(context, state) {
           overlay.remove()
           resolve(nextState)
         }
+
+        row.onclick = (ev) => {
+          const target = ev.target
+          if (target && typeof target.closest === 'function') {
+            if (target.closest('.wb-board-item-actions')) {
+              return
+            }
+          }
+          if (item.id === activeId) return
+          doSwitch()
+        }
+
+        btnSwitch.onclick = (ev) => {
+          ev.stopPropagation()
+          if (item.id === activeId) return
+          doSwitch()
+        }
+
+        btnRename.onclick = (ev) => {
+          ev.stopPropagation()
+          if (!safeState.boards || !safeState.boards[item.id]) return
+          const currentName = item.rawName || item.name || ''
+          let nextNameRaw
+          try {
+            nextNameRaw = typeof window !== 'undefined'
+              ? window.prompt(
+                  wbText('输入新的白板名称：', 'Enter a new board name:'),
+                  currentName,
+                )
+              : null
+          } catch {
+            nextNameRaw = null
+          }
+          if (nextNameRaw == null) return
+          const nextName = String(nextNameRaw).trim()
+          if (!nextName) return
+          const nextBoards = { ...(safeState.boards || {}) }
+          const oldBoard = nextBoards[item.id]
+          if (!oldBoard || typeof oldBoard !== 'object') return
+          nextBoards[item.id] = {
+            ...oldBoard,
+            name: nextName,
+            updatedAt: Date.now(),
+          }
+          const nextState = {
+            ...safeState,
+            boards: nextBoards,
+            lastUpdated: Date.now(),
+          }
+          overlay.remove()
+          resolve(nextState)
+        }
+
+        btnDelete.onclick = async (ev) => {
+          ev.stopPropagation()
+          if (!safeState.boards || !safeState.boards[item.id]) return
+          let ok = true
+          try {
+            ok =
+              context &&
+              context.ui &&
+              typeof context.ui.confirm === 'function'
+                ? await context.ui.confirm(
+                    wbText(
+                      '确定要删除这个白板吗？不会删除任何文档内容。',
+                      'Delete this board? It will not delete any files.',
+                    ),
+                  )
+                : true
+          } catch {
+            ok = false
+          }
+          if (!ok) return
+          const nextBoards = { ...(safeState.boards || {}) }
+          delete nextBoards[item.id]
+          const ids = Object.keys(nextBoards)
+          let nextActiveId = safeState.activeId || null
+          if (!ids.length) {
+            nextActiveId = null
+          } else if (item.id === safeState.activeId || !nextBoards[nextActiveId]) {
+            nextActiveId = ids[0]
+          }
+          const nextState = {
+            ...safeState,
+            boards: nextBoards,
+            activeId: nextActiveId,
+            lastUpdated: Date.now(),
+          }
+          overlay.remove()
+          resolve(nextState)
+        }
+
         list.appendChild(row)
       })
     }
@@ -1066,6 +1296,12 @@ async function wbOpenBoard(context) {
   const ensured = wbEnsureActiveBoard(state)
   state = ensured.state
   let board = ensured.board
+  let miniShell = null
+  let miniDragging = false
+  let miniDragStartX = 0
+  let miniDragStartY = 0
+  let miniStartLeft = 0
+  let miniStartTop = 0
 
   const overlay = document.createElement('div')
   overlay.className = 'wb-overlay'
@@ -1110,6 +1346,9 @@ async function wbOpenBoard(context) {
   const btnAddCurrent = document.createElement('button')
   btnAddCurrent.className = 'wb-btn'
   btnAddCurrent.innerHTML = `<span class="wb-btn-icon">＋</span><span>${wbText('添加当前文档', 'Add current note')}</span>`
+  const btnMinimize = document.createElement('button')
+  btnMinimize.className = 'wb-btn wb-btn-ghost'
+  btnMinimize.textContent = wbText('最小化', 'Minimize')
   const btnSettings = document.createElement('button')
   btnSettings.className = 'wb-btn wb-btn-ghost'
   btnSettings.textContent = wbText('白板设置', 'Settings')
@@ -1117,6 +1356,7 @@ async function wbOpenBoard(context) {
   btnClose.className = 'wb-btn wb-btn-close'
   btnClose.textContent = '×'
   headerActions.appendChild(btnAddCurrent)
+  headerActions.appendChild(btnMinimize)
   headerActions.appendChild(btnSettings)
   headerActions.appendChild(btnClose)
 
@@ -1180,6 +1420,82 @@ async function wbOpenBoard(context) {
 
   function syncHeaderBoardName() {
     subName.textContent = wbGetBoardDisplayName(board)
+  }
+
+  function ensureMiniShell() {
+    if (miniShell) return miniShell
+    const el = document.createElement('div')
+    el.className = 'wb-mini-shell'
+    const titleEl = document.createElement('div')
+    titleEl.className = 'wb-mini-title'
+    titleEl.textContent = `${wbText('白板', 'Whiteboard')} · ${wbGetBoardDisplayName(board)}`
+    const btnRestore = document.createElement('button')
+    btnRestore.className = 'wb-mini-btn'
+    btnRestore.textContent = wbText('还原', 'Restore')
+    const btnCloseMini = document.createElement('button')
+    btnCloseMini.className = 'wb-mini-btn'
+    btnCloseMini.textContent = wbText('关闭', 'Close')
+
+    el.appendChild(titleEl)
+    el.appendChild(btnRestore)
+    el.appendChild(btnCloseMini)
+    document.body.appendChild(el)
+
+    const onMiniMouseDown = (ev) => {
+      if (ev.button !== 0) return
+      if (ev.target === btnRestore || ev.target === btnCloseMini) return
+      ev.preventDefault()
+      const rect = el.getBoundingClientRect()
+      miniDragging = true
+      miniDragStartX = ev.clientX
+      miniDragStartY = ev.clientY
+      miniStartLeft = rect.left
+      miniStartTop = rect.top
+      el.style.cursor = 'grabbing'
+      const onMove = (e) => {
+        if (!miniDragging) return
+        const dx = e.clientX - miniDragStartX
+        const dy = e.clientY - miniDragStartY
+        const nextLeft = miniStartLeft + dx
+        const nextTop = miniStartTop + dy
+        el.style.left = nextLeft + 'px'
+        el.style.top = nextTop + 'px'
+        el.style.right = 'auto'
+        el.style.bottom = 'auto'
+      }
+      const onUp = () => {
+        if (!miniDragging) return
+        miniDragging = false
+        el.style.cursor = 'grab'
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    }
+
+    el.addEventListener('mousedown', onMiniMouseDown)
+
+    btnRestore.onclick = () => {
+      overlay.style.display = 'flex'
+      if (miniShell) {
+        miniShell.remove()
+        miniShell = null
+      }
+    }
+
+    btnCloseMini.onclick = () => {
+      if (miniShell) {
+        miniShell.remove()
+        miniShell = null
+      }
+      if (WB_BOARD_OPEN) {
+        WB_BOARD_OPEN = false
+      }
+    }
+
+    miniShell = el
+    return el
   }
 
   function applySnap(value) {
@@ -1481,6 +1797,10 @@ async function wbOpenBoard(context) {
   function closeBoard() {
     if (!WB_BOARD_OPEN) return
     WB_BOARD_OPEN = false
+    if (miniShell) {
+      miniShell.remove()
+      miniShell = null
+    }
     overlay.remove()
   }
 
@@ -1506,6 +1826,11 @@ async function wbOpenBoard(context) {
         1800,
       )
     }
+  }
+
+  btnMinimize.onclick = () => {
+    overlay.style.display = 'none'
+    ensureMiniShell()
   }
 
   sub.onclick = async () => {

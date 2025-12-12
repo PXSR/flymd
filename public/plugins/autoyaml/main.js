@@ -7,6 +7,29 @@ const AUTOYAML_DEFAULT_CONFIG = {
   maxTags: 8, // 单文档 tags 生成上限
 }
 
+// 轻量多语言：跟随宿主（flymd.locale），默认用系统语言
+const AUTOYAML_LOCALE_LS_KEY = 'flymd.locale'
+function autoyamlDetectLocale() {
+  try {
+    const nav = typeof navigator !== 'undefined' ? navigator : null
+    const lang = (nav && (nav.language || nav.userLanguage)) || 'en'
+    const lower = String(lang || '').toLowerCase()
+    if (lower.startsWith('zh')) return 'zh'
+  } catch {}
+  return 'en'
+}
+function autoyamlGetLocale() {
+  try {
+    const ls = typeof localStorage !== 'undefined' ? localStorage : null
+    const v = ls && ls.getItem(AUTOYAML_LOCALE_LS_KEY)
+    if (v === 'zh' || v === 'en') return v
+  } catch {}
+  return autoyamlDetectLocale()
+}
+function autoyamlText(zh, en) {
+  return autoyamlGetLocale() === 'en' ? en : zh
+}
+
 // 运行时缓存：用于在设置界面中更新右键菜单状态
 let AUTOYAML_RUNTIME_CTX = null
 let AUTOYAML_CTX_MENU_DISPOSER = null
@@ -195,7 +218,7 @@ async function generateMetadataWithAI(context, body, title, cfg) {
   if (!ai) return null
 
   const safeBody = String(body || '')
-  const safeTitle = String(title || '').trim() || '未命名'
+  const safeTitle = String(title || '').trim() || autoyamlText('未命名', 'Untitled')
   const trimmedBody =
     safeBody.length > 4000 ? safeBody.slice(0, 4000) : safeBody
 
@@ -253,7 +276,7 @@ function buildFrontMatter(body, aiMeta, cfg) {
     pad(now.getSeconds())
 
   const inferredTitle = inferTitleFromBody(body)
-  const title = inferredTitle || '未命名'
+  const title = inferredTitle || autoyamlText('未命名', 'Untitled')
 
   const lines = []
   lines.push('---')
@@ -326,7 +349,14 @@ async function applyAutoYaml(context) {
       if (!aiMeta) {
         // 启用了 AI 但不可用时，只提示一次“已退回本地规则”会更好，这里简单提示
         try {
-          context.ui.notice('AI 助手不可用，已退回本地规则生成 YAML', 'ok', 2200)
+          context.ui.notice(
+            autoyamlText(
+              'AI 助手不可用，已退回本地规则生成 YAML',
+              'AI Assistant unavailable, falling back to local rules to generate YAML',
+            ),
+            'ok',
+            2200,
+          )
         } catch {}
       }
     }
@@ -336,11 +366,19 @@ async function applyAutoYaml(context) {
     const cleanedBody = String(body || '').replace(/^\s*\r?\n/, '')
     const next = fm + '\n' + cleanedBody
     context.setEditorValue(next)
-    context.ui.notice('已自动生成 YAML 元数据', 'ok', 2000)
+    context.ui.notice(
+      autoyamlText('已自动生成 YAML 元数据', 'YAML metadata generated automatically'),
+      'ok',
+      2000,
+    )
   } catch (e) {
     console.error('[autoyaml] 处理失败', e)
     try {
-      context.ui.notice('AutoYAML 处理失败', 'err', 2000)
+      context.ui.notice(
+        autoyamlText('AutoYAML 处理失败', 'AutoYAML processing failed'),
+        'err',
+        2000,
+      )
     } catch {
       // 忽略二次错误
     }
@@ -357,7 +395,7 @@ function registerContextMenu(context) {
   }
   try {
     AUTOYAML_CTX_MENU_DISPOSER = context.addContextMenuItem({
-      label: 'AutoYAML：生成元数据',
+      label: autoyamlText('AutoYAML：生成元数据', 'AutoYAML: Generate metadata'),
       // 在源码、预览、所见三种模式下都提供右键入口
       condition: (ctx) =>
         ctx.mode === 'edit' ||
@@ -469,7 +507,7 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     const header = document.createElement('div')
     header.className = 'autoyaml-header'
     const title = document.createElement('div')
-    title.textContent = 'AutoYAML 设置'
+    title.textContent = autoyamlText('AutoYAML 设置', 'AutoYAML Settings')
     const btnClose = document.createElement('button')
     btnClose.textContent = '×'
     btnClose.className = 'autoyaml-btn'
@@ -490,13 +528,13 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     inputAi.type = 'checkbox'
     inputAi.checked = !!cfg.enableAI
     const spanAi = document.createElement('span')
-    spanAi.textContent = '启用 AI 生成标签和摘要（需安装并配置 AI 助手插件）'
+    spanAi.textContent = autoyamlText('启用 AI 生成标签和摘要（需安装并配置 AI 助手插件）', 'Enable AI to generate tags and summary (requires AI Assistant plugin installed and configured)')
     labelAi.appendChild(inputAi)
     labelAi.appendChild(spanAi)
     const tipAi = document.createElement('div')
     tipAi.className = 'autoyaml-tip'
     tipAi.textContent =
-      '开启后，AutoYAML 会调用 AI 助手插件生成 tags/category/summary，失败时自动退回本地规则。'
+      autoyamlText('开启后，AutoYAML 会调用 AI 助手插件生成 tags/category/summary，失败时自动退回本地规则。', 'When enabled, AutoYAML will call the AI Assistant plugin to generate tags/category/summary, and fall back to local rules on failure.')
     rowAi.appendChild(labelAi)
     rowAi.appendChild(tipAi)
 
@@ -508,13 +546,13 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     inputCtx.type = 'checkbox'
     inputCtx.checked = !!cfg.enableContextMenu
     const spanCtx = document.createElement('span')
-    spanCtx.textContent = '在编辑器右键菜单中显示 AutoYAML'
+    spanCtx.textContent = autoyamlText('在编辑器右键菜单中显示 AutoYAML', 'Show AutoYAML in editor context menu')
     labelCtx.appendChild(inputCtx)
     labelCtx.appendChild(spanCtx)
     const tipCtx = document.createElement('div')
     tipCtx.className = 'autoyaml-tip'
     tipCtx.textContent =
-      '勾选后，在右键菜单中会出现“AutoYAML：生成元数据”入口。'
+      autoyamlText('勾选后，在右键菜单中会出现“AutoYAML：生成元数据”入口。', 'When enabled, a "AutoYAML: Generate metadata" entry will appear in the editor context menu.')
     rowCtx.appendChild(labelCtx)
     rowCtx.appendChild(tipCtx)
 
@@ -523,7 +561,7 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     rowMax.className = 'autoyaml-row'
     const labelMax = document.createElement('label')
     const spanMax = document.createElement('span')
-    spanMax.textContent = '单篇文档最多生成的标签数量'
+    spanMax.textContent = autoyamlText('单篇文档最多生成的标签数量', 'Maximum number of tags per document')
     spanMax.style.flex = '1'
     const inputMax = document.createElement('input')
     inputMax.type = 'number'
@@ -544,7 +582,7 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     const tipMax = document.createElement('div')
     tipMax.className = 'autoyaml-tip'
     tipMax.textContent =
-      '0 表示不写入 tags，仅生成其他元数据；建议设置在 3~12 之间。'
+      autoyamlText('0 表示不写入 tags，仅生成其他元数据；建议设置在 3~12 之间。', '0 means do not write tags, only generate other metadata; 3–12 is recommended.')
     rowMax.appendChild(labelMax)
     rowMax.appendChild(tipMax)
 
@@ -556,10 +594,10 @@ async function openAutoYamlSettingsDialog(context, cfg) {
     footer.className = 'autoyaml-footer'
     const btnCancel = document.createElement('button')
     btnCancel.className = 'autoyaml-btn'
-    btnCancel.textContent = '取消'
+    btnCancel.textContent = autoyamlText('取消', 'Cancel')
     const btnOk = document.createElement('button')
     btnOk.className = 'autoyaml-btn autoyaml-btn-primary'
-    btnOk.textContent = '保存'
+    btnOk.textContent = autoyamlText('保存', 'Save')
     footer.appendChild(btnCancel)
     footer.appendChild(btnOk)
 
@@ -607,7 +645,10 @@ export async function activate(context) {
   if (typeof context.addMenuItem === 'function') {
     context.addMenuItem({
       label: 'AutoYAML',
-      title: '为当前文档自动补全 YAML 元数据',
+      title: autoyamlText(
+        '为当前文档自动补全 YAML 元数据',
+        'Automatically add YAML metadata to the current document',
+      ),
       onClick: () => {
         void applyAutoYaml(context)
       },
@@ -627,7 +668,11 @@ export async function openSettings(context) {
 
   await autoyamlSaveConfig(context, next)
   if (context.ui && context.ui.notice) {
-    context.ui.notice('AutoYAML 设置已保存', 'ok', 1800)
+    context.ui.notice(
+      autoyamlText('AutoYAML 设置已保存', 'AutoYAML settings saved'),
+      'ok',
+      1800,
+    )
   }
 
   // 根据最新配置更新右键菜单（使用运行期上下文，不依赖设置页上下文）

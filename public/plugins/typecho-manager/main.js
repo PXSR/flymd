@@ -1,6 +1,29 @@
 // Typecho Manager for flyMD
 // 通过 XML-RPC 从 Typecho 拉取博文并保存为本地 Markdown。
 
+// 轻量多语言：跟随宿主（flymd.locale），默认用系统语言
+const TM_LOCALE_LS_KEY = 'flymd.locale'
+function tmDetectLocale() {
+  try {
+    const nav = typeof navigator !== 'undefined' ? navigator : null
+    const lang = (nav && (nav.language || nav.userLanguage)) || 'en'
+    const lower = String(lang || '').toLowerCase()
+    if (lower.startsWith('zh')) return 'zh'
+  } catch {}
+  return 'en'
+}
+function tmGetLocale() {
+  try {
+    const ls = typeof localStorage !== 'undefined' ? localStorage : null
+    const v = ls && ls.getItem(TM_LOCALE_LS_KEY)
+    if (v === 'zh' || v === 'en') return v
+  } catch {}
+  return tmDetectLocale()
+}
+function tmText(zh, en) {
+  return tmGetLocale() === 'en' ? en : zh
+}
+
 const LS_KEY = 'flymd:typecho-manager:settings'
 
 function createDefaultSettings() {
@@ -81,7 +104,7 @@ async function ensureHttpAvailable(context, { silent = false } = {}) {
         } else {
           httpState.available = !!http?.fetch
           if (!httpState.available) {
-            httpState.error = new Error('ctx.http.fetch 不可用')
+            httpState.error = new Error(tmText('ctx.http.fetch 不可用', 'ctx.http.fetch is not available'))
           }
         }
       } catch (e) {
@@ -96,7 +119,11 @@ async function ensureHttpAvailable(context, { silent = false } = {}) {
   const ok = await httpState.checking
   if (!ok && !silent) {
     try {
-      context?.ui?.notice?.('网络层不可用：请在桌面版使用或确保已启用 @tauri-apps/plugin-http', 'err', 4000)
+      context?.ui?.notice?.(
+        tmText('网络层不可用：请在桌面版使用或确保已启用 @tauri-apps/plugin-http', 'Network layer is unavailable: please use the desktop app or ensure @tauri-apps/plugin-http is enabled'),
+        'err',
+        4000,
+      )
     } catch {}
   }
   return !!ok
@@ -379,7 +406,7 @@ function buildManagerDialog() {
   const headerLeft = document.createElement('div')
   headerLeft.className = 'tm-typecho-header-left'
   const titleSpan = document.createElement('span')
-  titleSpan.textContent = '管理 Typecho 博文'
+  titleSpan.textContent = tmText('管理 Typecho 博文', 'Manage Typecho posts')
   const badge = document.createElement('span')
   badge.className = 'tm-typecho-badge'
   badge.textContent = 'XML-RPC'
@@ -395,27 +422,27 @@ function buildManagerDialog() {
 
   const btnRefresh = document.createElement('button')
   btnRefresh.className = 'tm-typecho-btn'
-  btnRefresh.textContent = '刷新列表'
+  btnRefresh.textContent = tmText('刷新列表', 'Refresh list')
   btnRefresh.addEventListener('click', () => { void refreshPosts(globalContextRef) })
 
   const btnSettings = document.createElement('button')
   btnSettings.className = 'tm-typecho-btn'
-  btnSettings.textContent = '连接 / 下载设置'
+  btnSettings.textContent = tmText('连接 / 下载设置', 'Connection / download settings')
   btnSettings.addEventListener('click', () => { void openSettingsDialog(globalContextRef) })
 
   const btnRelated = document.createElement('button')
   btnRelated.className = 'tm-typecho-btn'
-  btnRelated.textContent = '相关文章'
+  btnRelated.textContent = tmText('相关文章', 'Related posts')
   btnRelated.addEventListener('click', () => { void openRelatedPostsDialog(globalContextRef) })
 
   const btnStats = document.createElement('button')
   btnStats.className = 'tm-typecho-btn'
-  btnStats.textContent = '统计 / 健康'
+  btnStats.textContent = tmText('统计 / 健康', 'Stats / health')
   btnStats.addEventListener('click', () => { void openStatsDialog(globalContextRef) })
 
   const btnClose = document.createElement('button')
   btnClose.className = 'tm-typecho-btn'
-  btnClose.textContent = '关闭'
+  btnClose.textContent = tmText('关闭', 'Close')
   btnClose.addEventListener('click', () => { closeOverlay() })
 
   headerRight.appendChild(btnRefresh)
@@ -440,9 +467,9 @@ function buildManagerDialog() {
   modeGroup.className = 'tm-typecho-filter-group tm-typecho-radio'
   filterModeInputs = {}
   ;[
-    { value: 'all', label: '全部' },
-    { value: 'date', label: '按时间' },
-    { value: 'category', label: '按分类' }
+    { value: 'all', label: tmText('全部', 'All') },
+    { value: 'date', label: tmText('按时间', 'By date') },
+    { value: 'category', label: tmText('按分类', 'By category') }
   ].forEach((m) => {
     const lab = document.createElement('label')
     const input = document.createElement('input')
@@ -490,10 +517,10 @@ function buildManagerDialog() {
   dateGroup.className = 'tm-typecho-filter-group'
   const fromLabel = document.createElement('span')
   fromLabel.className = 'tm-typecho-label-muted'
-  fromLabel.textContent = '从'
+  fromLabel.textContent = tmText('从', 'From')
   const toLabel = document.createElement('span')
   toLabel.className = 'tm-typecho-label-muted'
-  toLabel.textContent = '到'
+  toLabel.textContent = tmText('到', 'To')
   dateGroup.appendChild(fromLabel)
   dateGroup.appendChild(dateFromInput)
   dateGroup.appendChild(toLabel)
@@ -512,7 +539,7 @@ function buildManagerDialog() {
   catGroup.className = 'tm-typecho-filter-group'
   const catLabel = document.createElement('span')
   catLabel.className = 'tm-typecho-label-muted'
-  catLabel.textContent = '分类'
+  catLabel.textContent = tmText('分类', 'Category')
   catGroup.appendChild(catLabel)
   catGroup.appendChild(categorySelect)
   filters.appendChild(catGroup)
@@ -522,11 +549,11 @@ function buildManagerDialog() {
   searchGroup.className = 'tm-typecho-filter-group'
   const searchLabel = document.createElement('span')
   searchLabel.className = 'tm-typecho-label-muted'
-  searchLabel.textContent = '关键字'
+  searchLabel.textContent = tmText('关键字', 'Keyword')
   const searchInput = document.createElement('input')
   searchInput.type = 'text'
   searchInput.className = 'tm-typecho-input'
-  searchInput.placeholder = '标题 / 内容包含...'
+  searchInput.placeholder = tmText('标题 / 内容包含...', 'Title / content contains...')
   searchInput.value = sessionState.searchText || ''
   searchInput.addEventListener('input', () => {
     sessionState.searchText = searchInput.value || ''
@@ -545,7 +572,13 @@ function buildManagerDialog() {
 
   const head = document.createElement('div')
   head.className = 'tm-typecho-table-head'
-  ;['标题', '分类', '发布时间', '状态', '操作'].forEach((t, idx) => {
+  ;[
+    tmText('标题', 'Title'),
+    tmText('分类', 'Category'),
+    tmText('发布时间', 'Published at'),
+    tmText('状态', 'Status'),
+    tmText('操作', 'Actions'),
+  ].forEach((t, idx) => {
     const th = document.createElement('div')
     th.className = 'tm-typecho-th'
     if (idx === 0) {
@@ -594,11 +627,11 @@ function buildManagerDialog() {
   row1.className = 'tm-typecho-footer-row'
   const dirLabel = document.createElement('span')
   dirLabel.className = 'tm-typecho-label-muted'
-  dirLabel.textContent = '默认下载目录：'
+  dirLabel.textContent = tmText('默认下载目录：', 'Default download directory: ')
   defaultDirInput = document.createElement('input')
   defaultDirInput.type = 'text'
   defaultDirInput.className = 'tm-typecho-input'
-  defaultDirInput.placeholder = '例如: typecho-import'
+  defaultDirInput.placeholder = tmText('例如: typecho-import', 'e.g. typecho-import')
   defaultDirInput.value = sessionState.settings.defaultDownloadDir || ''
   defaultDirInput.addEventListener('change', async () => {
     sessionState.settings.defaultDownloadDir = defaultDirInput.value.trim()
@@ -609,7 +642,7 @@ function buildManagerDialog() {
   const btnBrowseFooterDir = document.createElement('button')
   btnBrowseFooterDir.type = 'button'
   btnBrowseFooterDir.className = 'tm-typecho-btn'
-  btnBrowseFooterDir.textContent = '浏览...'
+  btnBrowseFooterDir.textContent = tmText('浏览...', 'Browse...')
   btnBrowseFooterDir.style.marginLeft = '6px'
   btnBrowseFooterDir.addEventListener('click', async () => {
     const ctx = globalContextRef
@@ -635,12 +668,20 @@ function buildManagerDialog() {
         await saveSettings(ctx, sessionState.settings)
         return
       }
-      ctx.ui.notice('当前环境不支持目录浏览，请在桌面版中使用。', 'err', 2600)
+      ctx.ui.notice(
+        tmText('当前环境不支持目录浏览，请在桌面版中使用。', 'Directory picker not supported in current environment, please use desktop version.'),
+        'err',
+        2600,
+      )
     } catch (e) {
       console.error('[Typecho Manager] 选择默认下载目录失败（底部）', e)
       try {
         const msg = e && e.message ? String(e.message) : String(e || '未知错误')
-        ctx.ui.notice('选择默认下载目录失败：' + msg, 'err', 2600)
+        ctx.ui.notice(
+          tmText('选择默认下载目录失败：', 'Failed to choose default download directory: ') + msg,
+          'err',
+          2600,
+        )
       } catch {}
     }
   })
@@ -658,7 +699,7 @@ function buildManagerDialog() {
     await saveSettings(globalContextRef, sessionState.settings)
   })
   const cbText = document.createElement('span')
-  cbText.textContent = '始终下载到默认目录（否则下载到当前文件所在目录）'
+  cbText.textContent = tmText('始终下载到默认目录（否则下载到当前文件所在目录）', 'Always download to default directory (otherwise use current file directory)')
   cbWrap.appendChild(alwaysUseDefaultCheckbox)
   cbWrap.appendChild(cbText)
   row2.appendChild(cbWrap)
@@ -674,12 +715,12 @@ function buildManagerDialog() {
 
   const btnBatchDownload = document.createElement('button')
   btnBatchDownload.className = 'tm-typecho-btn'
-  btnBatchDownload.textContent = '批量下载选中'
+  btnBatchDownload.textContent = tmText('批量下载选中', 'Download selected')
   btnBatchDownload.addEventListener('click', () => { void batchDownloadSelected(globalContextRef) })
 
   prevPageBtn = document.createElement('button')
   prevPageBtn.className = 'tm-typecho-btn'
-  prevPageBtn.textContent = '上一页'
+  prevPageBtn.textContent = tmText('上一页', 'Prev page')
   prevPageBtn.addEventListener('click', () => {
     if (sessionState.pageIndex > 0) {
       sessionState.pageIndex--
@@ -689,7 +730,7 @@ function buildManagerDialog() {
 
   nextPageBtn = document.createElement('button')
   nextPageBtn.className = 'tm-typecho-btn'
-  nextPageBtn.textContent = '下一页'
+  nextPageBtn.textContent = tmText('下一页', 'Next page')
   nextPageBtn.addEventListener('click', () => {
     sessionState.pageIndex++
     void renderPostTable()
@@ -830,12 +871,12 @@ async function openRowContextMenu(context, post, x, y) {
     menu.appendChild(item)
   }
 
-  addItem('下载到本地', () => { void downloadSinglePost(context, post) })
-  addItem('用当前文档更新', () => { void publishCurrentForPost(context, post) })
+  addItem(tmText('下载到本地', 'Download to local'), () => { void downloadSinglePost(context, post) })
+  addItem(tmText('用当前文档更新', 'Update from current document'), () => { void publishCurrentForPost(context, post) })
   const sep = document.createElement('div')
   sep.className = 'tm-typecho-row-menu-sep'
   menu.appendChild(sep)
-  addItem('回滚到备份版本', () => { void openRollbackDialog(context, post) })
+  addItem(tmText('回滚到备份版本', 'Rollback to backup version'), () => { void openRollbackDialog(context, post) })
 
   document.body.appendChild(menu)
   rowContextMenuEl = menu
@@ -878,11 +919,15 @@ async function refreshPosts(context) {
   if (!context) return
   try {
     if (!sessionState.settings.endpoint || !sessionState.settings.username || !sessionState.settings.password) {
-      context.ui.notice('请先在“连接 / 下载设置”中配置 XML-RPC 地址、用户名和密码', 'err', 2600)
-      if (statusEl) statusEl.textContent = '未配置连接'
+      context.ui.notice(
+        tmText('请先在“连接 / 下载设置”中配置 XML-RPC 地址、用户名和密码', 'Please configure XML-RPC endpoint, username and password in "Connection / download settings" first'),
+        'err',
+        2600,
+      )
+      if (statusEl) statusEl.textContent = tmText('未配置连接', 'Not configured')
       return
     }
-    if (statusEl) statusEl.textContent = '正在从 Typecho 拉取文章...'
+    if (statusEl) statusEl.textContent = tmText('正在从 Typecho 拉取文章...', 'Fetching posts from Typecho...')
 
     const posts = await loadAllPosts(context, sessionState.settings)
     sessionState.posts = Array.isArray(posts) ? posts : []
@@ -895,7 +940,7 @@ async function refreshPosts(context) {
       categorySelect.innerHTML = ''
       const optAll = document.createElement('option')
       optAll.value = ''
-      optAll.textContent = '全部分类'
+      optAll.textContent = tmText('全部分类', 'All categories')
       categorySelect.appendChild(optAll)
       for (const c of sessionState.categories) {
         const opt = document.createElement('option')
@@ -907,12 +952,18 @@ async function refreshPosts(context) {
     }
 
     await renderPostTable()
-    if (statusEl) statusEl.textContent = `已加载 ${sessionState.posts.length} 篇`
+    if (statusEl) statusEl.textContent = tmText('已加载 ', 'Loaded ') + `${sessionState.posts.length}` + tmText(' 篇', ' posts')
   } catch (e) {
     console.error('[Typecho Manager] 刷新文章失败', e)
     const msg = e && e.message ? e.message : String(e || '未知错误')
-    if (statusEl) statusEl.textContent = '加载失败'
-    try { globalContextRef?.ui?.notice?.('加载 Typecho 文章失败：' + msg, 'err', 3200) } catch {}
+    if (statusEl) statusEl.textContent = tmText('加载失败', 'Load failed')
+    try {
+      globalContextRef?.ui?.notice?.(
+        tmText('加载 Typecho 文章失败：', 'Failed to load Typecho posts: ') + msg,
+        'err',
+        3200,
+      )
+    } catch {}
   }
 }
 
@@ -932,7 +983,7 @@ async function openRelatedPostsDialog(context) {
 
   const header = document.createElement('div')
   header.className = 'tm-typecho-settings-header'
-  header.textContent = '相关文章助手'
+  header.textContent = tmText('相关文章助手', 'Related posts helper')
   dlg.appendChild(header)
 
   const body = document.createElement('div')
@@ -947,7 +998,7 @@ async function openRelatedPostsDialog(context) {
     const p = document.createElement('div')
     p.style.fontSize = '12px'
     p.style.color = 'var(--muted)'
-    p.textContent = '尚未加载远端文章，请先在主窗口中点击“刷新列表”。'
+    p.textContent = tmText('尚未加载远端文章，请先在主窗口中点击“刷新列表”。', 'Remote posts not loaded yet. Please click "Refresh list" in the main window first.')
     body.appendChild(p)
   } else {
     const list = document.createElement('div')
@@ -958,7 +1009,7 @@ async function openRelatedPostsDialog(context) {
       const p = document.createElement('div')
       p.style.fontSize = '12px'
       p.style.color = 'var(--muted)'
-      p.textContent = '根据当前文档的标题 / 分类 / 标签，未找到明显相关的文章。'
+      p.textContent = tmText('根据当前文档的标题 / 分类 / 标签，未找到明显相关的文章。', 'No clearly related posts found based on current document title / categories / tags.')
       body.appendChild(p)
     } else {
       for (const item of related) {
@@ -974,13 +1025,13 @@ async function openRelatedPostsDialog(context) {
         line1.style.justifyContent = 'space-between'
         line1.style.alignItems = 'center'
         const titleSpan = document.createElement('span')
-        titleSpan.textContent = item.title || '(未命名)'
+        titleSpan.textContent = item.title || tmText('(未命名)', '(Untitled)')
         titleSpan.style.fontSize = '13px'
         titleSpan.style.fontWeight = '600'
         const scoreSpan = document.createElement('span')
         scoreSpan.style.fontSize = '11px'
         scoreSpan.style.color = 'var(--muted)'
-        scoreSpan.textContent = '匹配分: ' + item.score
+        scoreSpan.textContent = tmText('匹配分: ', 'Score: ') + item.score
         line1.appendChild(titleSpan)
         line1.appendChild(scoreSpan)
         row.appendChild(line1)
@@ -998,7 +1049,7 @@ async function openRelatedPostsDialog(context) {
         const btnInsertLink = document.createElement('button')
         btnInsertLink.type = 'button'
         btnInsertLink.className = 'tm-typecho-btn'
-        btnInsertLink.textContent = '插入链接'
+        btnInsertLink.textContent = tmText('插入链接', 'Insert link')
         btnInsertLink.addEventListener('click', () => {
           try {
             const cid = item.cid || p.postid || p.postId || p.cid || p.id || ''
@@ -1016,19 +1067,19 @@ async function openRelatedPostsDialog(context) {
               const v = String(context.getEditorValue() || '')
               context.setEditorValue(v + '\n\n' + linkMd + '\n')
             }
-            context.ui.notice('已插入相关文章链接', 'ok', 2000)
+            context.ui.notice(tmText('已插入相关文章链接', 'Inserted related post link'), 'ok', 2000)
           } catch (e) {
             console.error('[Typecho Manager] 插入相关文章链接失败', e)
             try {
               const msg = e && e.message ? String(e.message) : String(e || '未知错误')
-              context.ui.notice('插入链接失败：' + msg, 'err', 2600)
+              context.ui.notice(tmText('插入链接失败：', 'Failed to insert link: ') + msg, 'err', 2600)
             } catch {}
           }
         })
         const btnDownload = document.createElement('button')
         btnDownload.type = 'button'
         btnDownload.className = 'tm-typecho-btn'
-        btnDownload.textContent = '下载到本地'
+        btnDownload.textContent = tmText('下载到本地', 'Download to local')
         btnDownload.addEventListener('click', () => { void downloadSinglePost(context, p) })
         actRow.appendChild(btnInsertLink)
         actRow.appendChild(btnDownload)
@@ -1044,7 +1095,7 @@ async function openRelatedPostsDialog(context) {
   footer.className = 'tm-typecho-settings-footer'
   const btnClose = document.createElement('button')
   btnClose.className = 'tm-typecho-btn'
-  btnClose.textContent = '关闭'
+  btnClose.textContent = tmText('关闭', 'Close')
   btnClose.addEventListener('click', () => {
     try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
     relatedOverlayEl = null
@@ -1079,7 +1130,7 @@ async function openStatsDialog(context) {
 
   const header = document.createElement('div')
   header.className = 'tm-typecho-settings-header'
-  header.textContent = '统计 / 健康检查'
+  header.textContent = tmText('统计 / 健康检查', 'Stats / health check')
   dlg.appendChild(header)
 
   const body = document.createElement('div')
@@ -1091,7 +1142,7 @@ async function openStatsDialog(context) {
     const p = document.createElement('div')
     p.style.fontSize = '12px'
     p.style.color = 'var(--muted)'
-    p.textContent = '尚未加载远端文章，请先在主窗口中点击“刷新列表”。'
+    p.textContent = tmText('尚未加载远端文章，请先在主窗口中点击“刷新列表”。', 'Remote posts not loaded yet. Please click "Refresh list" in the main window first.')
     body.appendChild(p)
   } else {
     const total = posts.length
@@ -1140,11 +1191,11 @@ async function openStatsDialog(context) {
       statsList.appendChild(line)
     }
 
-    addLine('总文章数：' + total)
-    addLine('已发布：' + published)
-    addLine('草稿：' + drafts)
-    addLine('无分类文章：' + noCategory)
-    addLine('无标签文章：' + noTags)
+    addLine(tmText('总文章数：', 'Total posts: ') + total)
+    addLine(tmText('已发布：', 'Published: ') + published)
+    addLine(tmText('草稿：', 'Drafts: ') + drafts)
+    addLine(tmText('无分类文章：', 'Posts without category: ') + noCategory)
+    addLine(tmText('无标签文章：', 'Posts without tags: ') + noTags)
 
     body.appendChild(statsList)
 
@@ -1171,7 +1222,7 @@ async function openStatsDialog(context) {
       if (!arr.length) {
         const empty = document.createElement('div')
         empty.style.color = 'var(--muted)'
-        empty.textContent = '无数据'
+        empty.textContent = tmText('无数据', 'No data')
         ul.appendChild(empty)
       } else {
         for (const [name, count] of arr) {
@@ -1184,8 +1235,8 @@ async function openStatsDialog(context) {
       return box
     }
 
-    topWrap.appendChild(buildTopList('分类 Top', cats))
-    topWrap.appendChild(buildTopList('标签 Top', tags))
+    topWrap.appendChild(buildTopList(tmText('分类 Top', 'Category Top'), cats))
+    topWrap.appendChild(buildTopList(tmText('标签 Top', 'Tag Top'), tags))
 
     body.appendChild(topWrap)
   }
@@ -1194,7 +1245,7 @@ async function openStatsDialog(context) {
   footer.className = 'tm-typecho-settings-footer'
   const btnClose = document.createElement('button')
   btnClose.className = 'tm-typecho-btn'
-  btnClose.textContent = '关闭'
+  btnClose.textContent = tmText('关闭', 'Close')
   btnClose.addEventListener('click', () => {
     try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
     statsOverlayEl = null
@@ -1217,7 +1268,13 @@ async function batchDownloadSelected(context) {
   if (!context) return
   const list = getSelectedPosts()
   if (!list.length) {
-    try { context.ui.notice('请先勾选要下载的文章', 'err', 2200) } catch {}
+    try {
+      context.ui.notice(
+        tmText('请先勾选要下载的文章', 'Please select posts to download first'),
+        'err',
+        2200,
+      )
+    } catch {}
     return
   }
   let ok = false
@@ -1239,14 +1296,26 @@ async function openRollbackDialog(context, post) {
   const cid = post.postid || post.postId || post.cid || post.id
   const cidStr = String(cid || '')
   if (!cidStr) {
-    try { context.ui.notice('该文章缺少 ID，无法回滚', 'err', 2200) } catch {}
+    try {
+      context.ui.notice(
+        tmText('该文章缺少 ID，无法回滚', 'This post has no ID, cannot rollback'),
+        'err',
+        2200,
+      )
+    } catch {}
     return
   }
   const s = sessionState.settings || await loadSettings(context)
   const backupsRoot = s.backups && typeof s.backups === 'object' ? s.backups : {}
   const list = Array.isArray(backupsRoot[cidStr]) ? backupsRoot[cidStr] : []
   if (!list.length) {
-    try { context.ui.notice('当前文章尚无可用回滚版本', 'err', 2400) } catch {}
+    try {
+      context.ui.notice(
+        tmText('当前文章尚无可用回滚版本', 'Current post has no available backup versions to rollback'),
+        'err',
+        2400,
+      )
+    } catch {}
     return
   }
   if (rollbackOverlayEl) {
@@ -1262,7 +1331,7 @@ async function openRollbackDialog(context, post) {
 
   const header = document.createElement('div')
   header.className = 'tm-typecho-settings-header'
-  header.textContent = `回滚 Typecho 文章（ID=${cidStr}）`
+  header.textContent = tmText(`回滚 Typecho 文章（ID=${cidStr}）`, `Rollback Typecho post (ID=${cidStr})`)
   dlg.appendChild(header)
 
   const body = document.createElement('div')
@@ -1273,7 +1342,10 @@ async function openRollbackDialog(context, post) {
   info.style.fontSize = '11px'
   info.style.color = 'var(--muted)'
   info.style.marginBottom = '6px'
-  info.textContent = '以下为最近保存的远端版本快照，选择一个版本可将远端文章回滚到当时的内容（不会自动修改本地文档）。'
+  info.textContent = tmText(
+    '以下为最近保存的远端版本快照，选择一个版本可将远端文章回滚到当时的内容（不会自动修改本地文档）。',
+    'Below are recently saved remote snapshots. Choosing one will rollback the remote post to that content (local document will not be modified).',
+  )
   body.appendChild(info)
 
   const listEl = document.createElement('div')
@@ -1284,7 +1356,11 @@ async function openRollbackDialog(context, post) {
     try {
       const postStruct = bk && bk.post ? bk.post : null
       if (!postStruct || typeof postStruct !== 'object') {
-        context.ui.notice('备份数据不完整，无法回滚', 'err', 2400)
+        context.ui.notice(
+          tmText('备份数据不完整，无法回滚', 'Backup data is incomplete, cannot rollback'),
+          'err',
+          2400,
+        )
         return
       }
       const status = String(postStruct.post_status || postStruct.postStatus || postStruct.status || '').toLowerCase()
@@ -1416,7 +1492,7 @@ async function openRollbackDialog(context, post) {
   footer.className = 'tm-typecho-settings-footer'
   const btnClose = document.createElement('button')
   btnClose.className = 'tm-typecho-btn'
-  btnClose.textContent = '关闭'
+  btnClose.textContent = tmText('关闭', 'Close')
   btnClose.addEventListener('click', () => {
     try { overlay.parentNode && overlay.parentNode.removeChild(overlay) } catch {}
     rollbackOverlayEl = null
@@ -2167,20 +2243,20 @@ async function downloadSinglePost(context, post) {
       const inputCover = document.createElement('input')
       inputCover.type = 'text'
       inputCover.className = 'tm-typecho-settings-input'
-      inputCover.placeholder = '可选：文章头图 URL（例如 https://.../cover.jpg）'
+      inputCover.placeholder = tmText('可选：文章头图 URL（例如 https://.../cover.jpg）', 'Optional: cover image URL (e.g. https://.../cover.jpg)')
       inputCover.value = initialCover
-      addRow('头图地址', inputCover); rows.cover = inputCover
+      addRow(tmText('头图地址', 'Cover URL'), inputCover); rows.cover = inputCover
 
       const footer = document.createElement('div')
       footer.className = 'tm-typecho-settings-footer'
 
       const btnCancel = document.createElement('button')
       btnCancel.className = 'tm-typecho-btn'
-      btnCancel.textContent = '取消'
+      btnCancel.textContent = tmText('取消', 'Cancel')
 
       const btnOk = document.createElement('button')
       btnOk.className = 'tm-typecho-btn primary'
-      btnOk.textContent = meta.cid ? '更新文章' : '发布文章'
+      btnOk.textContent = meta.cid ? tmText('更新文章', 'Update post') : tmText('发布文章', 'Publish post')
 
       footer.appendChild(btnCancel)
       footer.appendChild(btnOk)
@@ -2242,7 +2318,7 @@ async function publishCurrentDocument(context) {
   sessionState.settings = await loadSettings(context)
   const s = sessionState.settings
   if (!s.endpoint || !s.username || !s.password) {
-    context.ui.notice('请先在“连接 / 下载设置”中配置 XML-RPC 地址、用户名和密码', 'err', 2600)
+    context.ui.notice(tmText('请先在“连接 / 下载设置”中配置 XML-RPC 地址、用户名和密码', 'Please configure XML-RPC endpoint, username and password in "Connection / download settings" first'), 'err', 2600)
     return
   }
   let meta = null
@@ -2258,7 +2334,11 @@ async function publishCurrentDocument(context) {
   meta = meta || {}
   body = String(body || '')
   if (!body.trim()) {
-    context.ui.notice('当前文档内容为空，已取消发布', 'err', 2200)
+    context.ui.notice(
+      tmText('当前文档内容为空，已取消发布', 'Current document is empty, publish cancelled'),
+      'err',
+      2200,
+    )
     return
   }
   const cid = meta.typechoId || meta.cid || meta.id
@@ -2278,7 +2358,7 @@ async function publishCurrentDocument(context) {
       }
     } catch {}
   }
-  if (!title) title = '(未命名)'
+  if (!title) title = tmText('(未命名)', '(Untitled)')
   const excerpt = String(meta.excerpt || '').trim()
   let cats = Array.isArray(meta.categories) ? meta.categories : []
   const tagArr = Array.isArray(meta.tags)
@@ -2506,12 +2586,20 @@ async function publishCurrentDocument(context) {
       } catch (e) {
         console.error('[Typecho Manager] 回写 Front Matter 失败（不影响远端新建）', e)
       }
-      context.ui.notice('远端文章已创建（CID=' + cidStr + '）', 'ok', 2300)
+      context.ui.notice(
+        tmText('远端文章已创建（CID=', 'Remote post created (CID=') + cidStr + '）',
+        'ok',
+        2300,
+      )
     }
   } catch (e) {
     console.error('[Typecho Manager] 发布当前文档失败', e)
     const msg = e && e.message ? e.message : String(e || '未知错误')
-    context.ui.notice('发布/更新远端文章失败：' + msg, 'err', 3200)
+    context.ui.notice(
+      tmText('发布/更新远端文章失败：', 'Failed to publish/update remote post: ') + msg,
+      'err',
+      3200,
+    )
   }
 }
 
@@ -2528,13 +2616,19 @@ async function publishCurrentForPost(context, post) {
 
   if (!cidMeta && cidPost) {
     const ok = await context.ui.confirm(
-      `当前文档没有 typechoId，将使用列表中的文章 ID=${cidPost} 作为目标，是否继续？`
+      tmText(
+        `当前文档没有 typechoId，将使用列表中的文章 ID=${cidPost} 作为目标，是否继续？`,
+        `Current document has no typechoId. Use the list post ID=${cidPost} as target and continue?`,
+      ),
     )
     if (!ok) return
     meta.typechoId = String(cidPost)
   } else if (cidMeta && cidPost && String(cidMeta) !== String(cidPost)) {
     const ok = await context.ui.confirm(
-      `当前文档的 typechoId=${cidMeta} 与列表中的 ID=${cidPost} 不一致。\n\n仍要使用当前文档覆盖列表所选远端文章吗？`
+      tmText(
+        `当前文档的 typechoId=${cidMeta} 与列表中的 ID=${cidPost} 不一致。\n\n仍要使用当前文档覆盖列表所选远端文章吗？`,
+        `Current document typechoId=${cidMeta} differs from list ID=${cidPost}.\n\nStill use current document to overwrite the selected remote post?`,
+      ),
     )
     if (!ok) return
     meta.typechoId = String(cidPost)
@@ -2561,7 +2655,7 @@ async function openSettingsDialog(context) {
 
     const header = document.createElement('div')
     header.className = 'tm-typecho-settings-header'
-    header.textContent = 'Typecho 连接 / 下载设置'
+    header.textContent = tmText('Typecho 连接 / 下载设置', 'Typecho connection / download settings')
     dlg.appendChild(header)
 
     const body = document.createElement('div')
@@ -2583,17 +2677,17 @@ async function openSettingsDialog(context) {
     inputEndpoint.type = 'text'
     inputEndpoint.className = 'tm-typecho-settings-input'
     inputEndpoint.placeholder = 'https://blog.example.com/action/xmlrpc'
-    addRow('XML-RPC 地址', inputEndpoint); rows.endpoint = inputEndpoint
+    addRow(tmText('XML-RPC 地址', 'XML-RPC endpoint'), inputEndpoint); rows.endpoint = inputEndpoint
 
     const inputUser = document.createElement('input')
     inputUser.type = 'text'
     inputUser.className = 'tm-typecho-settings-input'
-    addRow('用户名', inputUser); rows.username = inputUser
+    addRow(tmText('用户名', 'Username'), inputUser); rows.username = inputUser
 
     const inputPwd = document.createElement('input')
     inputPwd.type = 'password'
     inputPwd.className = 'tm-typecho-settings-input'
-    addRow('密码', inputPwd); rows.password = inputPwd
+    addRow(tmText('密码', 'Password'), inputPwd); rows.password = inputPwd
 
     const inputBlogId = document.createElement('input')
     inputBlogId.type = 'text'
@@ -2605,12 +2699,12 @@ async function openSettingsDialog(context) {
     inputBaseUrl.type = 'text'
     inputBaseUrl.className = 'tm-typecho-settings-input'
     inputBaseUrl.placeholder = 'https://blog.example.com（用于补全相对链接，可留空）'
-    addRow('站点根地址', inputBaseUrl); rows.baseUrl = inputBaseUrl
+    addRow(tmText('站点根地址', 'Site base URL'), inputBaseUrl); rows.baseUrl = inputBaseUrl
 
     const inputDefaultDir = document.createElement('input')
     inputDefaultDir.type = 'text'
     inputDefaultDir.className = 'tm-typecho-settings-input'
-    inputDefaultDir.placeholder = 'typecho-import 或绝对路径'
+    inputDefaultDir.placeholder = tmText('typecho-import 或绝对路径', 'typecho-import or absolute path')
     const defaultDirRow = document.createElement('div')
     defaultDirRow.style.display = 'flex'
     defaultDirRow.style.gap = '8px'
@@ -2619,7 +2713,7 @@ async function openSettingsDialog(context) {
     const btnBrowseDir = document.createElement('button')
     btnBrowseDir.type = 'button'
     btnBrowseDir.className = 'tm-typecho-btn'
-    btnBrowseDir.textContent = '浏览...'
+    btnBrowseDir.textContent = tmText('浏览...', 'Browse...')
     btnBrowseDir.addEventListener('click', async () => {
       try {
         if (context.pickDirectory && typeof context.pickDirectory === 'function') {
@@ -2636,27 +2730,27 @@ async function openSettingsDialog(context) {
           inputDefaultDir.value = dir
           return
         }
-        context.ui.notice('当前环境不支持目录浏览，请在桌面版中使用。', 'err', 2600)
+        context.ui.notice(tmText('当前环境不支持目录浏览，请在桌面版中使用。', 'Directory picker not supported in current environment, please use desktop version.'), 'err', 2600)
       } catch (e) {
         console.error('[Typecho Manager] 选择默认下载目录失败', e)
         try {
           const msg = e && e.message ? String(e.message) : String(e || '未知错误')
-          context.ui.notice('选择默认下载目录失败：' + msg, 'err', 2600)
+          context.ui.notice(tmText('选择默认下载目录失败：', 'Failed to choose default download directory: ') + msg, 'err', 2600)
         } catch {}
       }
     })
     defaultDirRow.appendChild(btnBrowseDir)
-    addRow('默认下载目录', defaultDirRow); rows.defaultDir = inputDefaultDir
+    addRow(tmText('默认下载目录', 'Default download directory'), defaultDirRow); rows.defaultDir = inputDefaultDir
 
     const cbWrap = document.createElement('label')
     cbWrap.className = 'tm-typecho-checkbox'
     const cbAlways = document.createElement('input')
     cbAlways.type = 'checkbox'
     const cbText = document.createElement('span')
-    cbText.textContent = '始终下载到默认目录（否则下载到当前文件所在目录）'
+    cbText.textContent = tmText('始终下载到默认目录（否则下载到当前文件所在目录）', 'Always download to default directory (otherwise use current file directory)')
     cbWrap.appendChild(cbAlways)
     cbWrap.appendChild(cbText)
-    addRow('目录策略', cbWrap); rows.always = cbAlways
+    addRow(tmText('目录策略', 'Directory strategy'), cbWrap); rows.always = cbAlways
 
     dlg.appendChild(body)
 
@@ -2665,16 +2759,16 @@ async function openSettingsDialog(context) {
 
     const btnCancel = document.createElement('button')
     btnCancel.className = 'tm-typecho-btn'
-    btnCancel.textContent = '取消'
+    btnCancel.textContent = tmText('取消', 'Cancel')
     btnCancel.addEventListener('click', () => { settingsOverlayEl.classList.add('hidden') })
 
     const btnTest = document.createElement('button')
     btnTest.className = 'tm-typecho-btn'
-    btnTest.textContent = '测试连接'
+    btnTest.textContent = tmText('测试连接', 'Test connection')
 
     const btnSave = document.createElement('button')
     btnSave.className = 'tm-typecho-btn primary'
-    btnSave.textContent = '保存'
+    btnSave.textContent = tmText('保存', 'Save')
 
     footer.appendChild(btnCancel)
     footer.appendChild(btnTest)
@@ -2697,7 +2791,7 @@ async function openSettingsDialog(context) {
 
       await saveSettings(context, sessionState.settings)
       settingsOverlayEl.classList.add('hidden')
-      try { context.ui.notice('Typecho 设置已保存', 'ok', 2200) } catch {}
+      try { context.ui.notice(tmText('Typecho 设置已保存', 'Typecho settings saved'), 'ok', 2200) } catch {}
 
       if (defaultDirInput) defaultDirInput.value = sessionState.settings.defaultDownloadDir || ''
       if (alwaysUseDefaultCheckbox) alwaysUseDefaultCheckbox.checked = !!sessionState.settings.alwaysUseDefaultDir
@@ -2713,7 +2807,7 @@ async function openSettingsDialog(context) {
         baseUrl: String(r.baseUrl.value || '').trim()
       }
       if (!tmp.endpoint || !tmp.username || !tmp.password) {
-        context.ui.notice('请先填写完整的 XML-RPC 地址、用户名和密码', 'err', 2600)
+        context.ui.notice(tmText('请先填写完整的 XML-RPC 地址、用户名和密码', 'Please fill in XML-RPC endpoint, username and password'), 'err', 2600)
         return
       }
       try {
@@ -2723,11 +2817,11 @@ async function openSettingsDialog(context) {
           tmp.password,
           1
         ])
-        context.ui.notice('连接测试成功', 'ok', 2400)
+        context.ui.notice(tmText('连接测试成功', 'Connection test succeeded'), 'ok', 2400)
       } catch (e) {
         console.error('[Typecho Manager] 连接测试失败', e)
         const msg = e && e.message ? e.message : String(e || '未知错误')
-        context.ui.notice('连接测试失败：' + msg, 'err', 3200)
+        context.ui.notice(tmText('连接测试失败：', 'Connection test failed: ') + msg, 'err', 3200)
       }
     })
   }
@@ -2771,7 +2865,7 @@ export async function activate(context) {
   if (context.addContextMenuItem) {
     try {
       const disposeManage = context.addContextMenuItem({
-        label: '管理 Typecho 博文',
+        label: tmText('管理 Typecho 博文', 'Manage Typecho posts'),
         icon: '📖',
         onClick: () => { void openManager(globalContextRef) }
       })
@@ -2779,7 +2873,7 @@ export async function activate(context) {
     } catch {}
     try {
       const disposePublish = context.addContextMenuItem({
-        label: '发布到 Typecho',
+        label: tmText('发布到 Typecho', 'Publish to Typecho'),
         icon: '⬆️',
         onClick: () => { void publishCurrentDocument(globalContextRef) }
       })

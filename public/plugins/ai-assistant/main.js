@@ -30,6 +30,29 @@ const DEFAULT_CFG = {
   alwaysUseFreeTrans: false // 翻译功能始终使用免费模型
 }
 
+// ========== 轻量级多语言：跟随宿主 ==========
+const AI_LOCALE_LS_KEY = 'flymd.locale'
+function aiDetectSystemLocale() {
+  try {
+    const nav = typeof navigator !== 'undefined' ? navigator : null
+    const lang = (nav && (nav.language || nav['userLanguage'])) || 'en'
+    const lower = String(lang || '').toLowerCase()
+    if (lower.startsWith('zh')) return 'zh'
+  } catch {}
+  return 'en'
+}
+function aiGetLocale() {
+  try {
+    const ls = typeof localStorage !== 'undefined' ? localStorage : null
+    const v = ls && ls.getItem(AI_LOCALE_LS_KEY)
+    if (v === 'zh' || v === 'en') return v
+  } catch {}
+  return aiDetectSystemLocale()
+}
+function aiText(zh, en) {
+  return aiGetLocale() === 'en' ? en : zh
+}
+
 // 会话只做最小持久化（可选），首版以内存为主
 let __AI_SESSION__ = { id: '', name: '默认会话', messages: [], docHash: '', docTitle: '' }
 let __AI_DB__ = null // { byDoc: { [hash]: { title, activeId, items:[{id,name,created,updated,messages:[]}] } } }
@@ -1223,11 +1246,11 @@ function renderMsgs(root) {
           const sel = await __AI_CONTEXT__.getSelection?.()
           if (sel && sel.end > sel.start) {
             await __AI_CONTEXT__.replaceRange(sel.start, sel.end, s)
-            __AI_CONTEXT__.ui.notice('已替换选区', 'ok', 1400)
+            __AI_CONTEXT__.ui.notice(aiText('已替换选区', 'Selection replaced'), 'ok', 1400)
             return
           }
         } catch {}
-        __AI_CONTEXT__.ui.notice('没有选区，已改为光标处插入', 'ok', 1400)
+        __AI_CONTEXT__.ui.notice(aiText('没有选区，已改为光标处插入', 'No selection, inserted at cursor'), 'ok', 1400)
         try { await __AI_CONTEXT__.insertAtCursor('\n' + s + '\n') } catch {
           try { const cur = String(__AI_CONTEXT__.getEditorValue()||''); __AI_CONTEXT__.setEditorValue(cur + (cur.endsWith('\n')?'':'\n') + s + '\n') } catch {}
         }
@@ -1575,18 +1598,18 @@ function isDefaultSessionName(name){
     it.name = name
     await saveSessionsDB(context)
     await refreshSessionSelect(context)
-    try { context.ui.notice('会话已命名：' + name, 'ok', 1600) } catch {}
+    try { context.ui.notice(aiText('会话已命名：', 'Session renamed: ') + name, 'ok', 1600) } catch {}
   } catch {}
 }
 
-async function updateWindowTitle(context) {
-  try {
-    const head = DOC().getElementById('ai-title')
-    if (!head) return
-    await ensureSessionForDoc(context)
-    head.textContent = __AI_SESSION__.docTitle || '未命名'
-  } catch {}
-}
+  async function updateWindowTitle(context) {
+    try {
+      const head = DOC().getElementById('ai-title')
+      if (!head) return
+      await ensureSessionForDoc(context)
+      head.textContent = __AI_SESSION__.docTitle || aiText('未命名', 'Untitled')
+    } catch {}
+  }
 
 async function ensureWindow(context) {
   let el = elById('ai-assist-win')
@@ -2116,23 +2139,23 @@ async function mountWindow(context){
   el.innerHTML = [
     // 头部：标题 + 会话历史 + 新建会话 + 更多菜单 + 关闭
     '<div id="ai-head">',
-    '  <div id="ai-title">AI 写作助手</div>',
+    '  <div id="ai-title">' + aiText('AI 写作助手', 'AI Assistant') + '</div>',
     '  <div class="ai-head-actions">',
-    '    <button id="ai-btn-history" class="ai-icon-btn" title="会话历史">⏱</button>',
-    '    <button id="ai-s-new" class="ai-icon-btn" title="新建会话">+</button>',
+    '    <button id="ai-btn-history" class="ai-icon-btn" title="' + aiText('会话历史', 'History') + '">⏱</button>',
+    '    <button id="ai-s-new" class="ai-icon-btn" title="' + aiText('新建会话', 'New session') + '">+</button>',
     '    <div class="ai-more-menu-wrap">',
-    '      <button id="ai-btn-more" class="ai-icon-btn" title="更多">⋮</button>',
+    '      <button id="ai-btn-more" class="ai-icon-btn" title="' + aiText('更多', 'More') + '">⋮</button>',
     '      <div id="ai-more-menu" class="ai-dropdown-menu">',
-    '        <div class="ai-menu-item" id="ai-menu-settings">插件设置</div>',
-    '        <div class="ai-menu-item" id="ai-menu-theme">夜间模式</div>',
-    '        <div class="ai-menu-item" id="ai-menu-dock-left">切换左侧</div>',
-    '        <div class="ai-menu-item" id="ai-menu-dock-right">切换右侧</div>',
-    '        <div class="ai-menu-item" id="ai-menu-dock-bottom">切换下方</div>',
-    '        <div class="ai-menu-item" id="ai-menu-dock-float">切换浮窗</div>',
-    '        <div class="ai-menu-item" id="ai-menu-del-session">删除会话</div>',
+    '        <div class="ai-menu-item" id="ai-menu-settings">' + aiText('插件设置', 'Plugin settings') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-theme">' + aiText('夜间模式', 'Dark mode') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-dock-left">' + aiText('切换左侧', 'Dock left') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-dock-right">' + aiText('切换右侧', 'Dock right') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-dock-bottom">' + aiText('切换下方', 'Dock bottom') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-dock-float">' + aiText('切换浮窗', 'Floating window') + '</div>',
+    '        <div class="ai-menu-item" id="ai-menu-del-session">' + aiText('删除会话', 'Delete session') + '</div>',
     '      </div>',
     '    </div>',
-    '    <button id="ai-btn-close" class="ai-icon-btn close-btn" title="关闭">×</button>',
+    '    <button id="ai-btn-close" class="ai-icon-btn close-btn" title="' + aiText('关闭', 'Close') + '">×</button>',
     '  </div>',
     '</div>',
     // 会话历史下拉面板
@@ -2144,15 +2167,15 @@ async function mountWindow(context){
     ' <div id="ai-toolbar">',
     '  <div class="ai-toolbar-row ai-toolbar-meta">',
     '   <div class="ai-mode-switch-mini">',
-    '    <span class="mode-label" id="mode-label-custom-toolbar">自定义</span>',
+    '    <span class="mode-label" id="mode-label-custom-toolbar">' + aiText('自定义', 'Custom') + '</span>',
     '    <label class="toggle-switch-mini"><input type="checkbox" id="ai-provider-toggle"/><span class="toggle-slider-mini"></span></label>',
-    '    <span class="mode-label" id="mode-label-free-toolbar">免费</span>',
+    '    <span class="mode-label" id="mode-label-free-toolbar">' + aiText('免费', 'Free') + '</span>',
     '   </div>',
-    '   <label id="ai-free-model-label" style="display:none;font-size:12px;color:#6b7280;white-space:nowrap;margin-left:6px;">模型</label>',
-    '   <select id="ai-free-model" title="选择免费模型" style="display:none;width:80px;border-radius:6px;padding:4px 6px;font-size:12px;"><option value="qwen">Qwen</option><option value="gemini">Gemini Vision</option><option value="glm">GLM</option></select>',
+    '   <label id="ai-free-model-label" style="display:none;font-size:12px;color:#6b7280;white-space:nowrap;margin-left:6px;">' + aiText('模型', 'Model') + '</label>',
+    '   <select id="ai-free-model" title="' + aiText('选择免费模型', 'Choose free model') + '" style="display:none;width:80px;border-radius:6px;padding:4px 6px;font-size:12px;"><option value="qwen">Qwen</option><option value="gemini">Gemini Vision</option><option value="glm">GLM</option></select>',
     '   <div id="ai-selects">',
-    '    <label id="ai-model-label" style="font-size:12px;">模型</label>',
-    '    <input id="ai-model" placeholder="如 gpt-4o-mini" style="width:120px;font-size:12px;padding:4px 6px;"/>',
+    '    <label id="ai-model-label" style="font-size:12px;">' + aiText('模型', 'Model') + '</label>',
+    '    <input id="ai-model" placeholder="' + aiText('如 gpt-4o-mini', 'e.g. gpt-4o-mini') + '" style="width:120px;font-size:12px;padding:4px 6px;"/>',
     '   </div>',
     '   <a id="ai-model-powered" href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="display:none;border:none;outline:none;margin-left:auto;white-space:nowrap;line-height:22px;height:22px;">',
     '    <span id="ai-model-powered-text" style="display:none;font-size:13px;color:#6b7280;margin-right:6px;height:22px;line-height:22px;vertical-align:middle;"></span>',
@@ -2164,20 +2187,20 @@ async function mountWindow(context){
     // 输入框区域：左下角快捷操作下拉
      ' <div id="ai-input">',
      '  <div class="ai-input-wrap">',
-     '   <textarea id="ai-text" placeholder="输入与 AI 对话..."></textarea>',
+     '   <textarea id="ai-text" placeholder="' + aiText('输入与 AI 对话...', 'Talk with AI...') + '"></textarea>',
      '   <div class="ai-quick-action-wrap">',
-     '    <select id="ai-quick-action" title="快捷操作">',
-     '     <option value="">智能问答</option>',
-     '     <option value="续写">续写</option>',
-     '     <option value="润色">润色</option>',
-     '     <option value="纠错">纠错</option>',
-     '     <option value="提纲">提纲</option>',
-     '     <option value="待办">待办</option>',
-     '     <option value="提醒">提醒</option>',
+     '    <select id="ai-quick-action" title="' + aiText('快捷操作', 'Quick actions') + '">',
+     '     <option value="">' + aiText('智能问答', 'Ask AI') + '</option>',
+     '     <option value="续写">' + aiText('续写', 'Continue writing') + '</option>',
+     '     <option value="润色">' + aiText('润色', 'Polish') + '</option>',
+     '     <option value="纠错">' + aiText('纠错', 'Correct') + '</option>',
+     '     <option value="提纲">' + aiText('提纲', 'Outline') + '</option>',
+     '     <option value="待办">' + aiText('待办', 'Todo') + '</option>',
+     '     <option value="提醒">' + aiText('提醒', 'Reminder') + '</option>',
      '    </select>',
-     '    <button id="ai-vision-toggle" class="ai-vision-toggle" title="视觉模式：点击开启，让 AI 读取文档中的图片">Vision</button>',
+     '    <button id="ai-vision-toggle" class="ai-vision-toggle" title="' + aiText('视觉模式：点击开启，让 AI 读取文档中的图片', 'Vision mode: let AI read images from the document') + '">Vision</button>',
      '   </div>',
-     '   <button id="ai-send" title="发送消息">↵</button>',
+     '   <button id="ai-send" title="' + aiText('发送消息', 'Send message') + '">↵</button>',
      '  </div>',
     ' </div>',
     '</div><div id="ai-vresizer" title="拖动调整宽度"></div><div id="ai-resizer" title="拖动调整尺寸"></div>'
@@ -2694,7 +2717,7 @@ async function translateText(context) {
     const useFreeTrans = !!cfg.alwaysUseFreeTrans
     const isFree = useFreeTrans || isFreeProvider(cfg)
     if (!cfg.apiKey && !isFree) {
-      context.ui.notice('请先在"设置"中配置 API Key', 'err', 3000)
+      context.ui.notice(aiText('请先在\"设置\"中配置 API Key', 'Please configure API Key in Settings first'), 'err', 3000)
       return
     }
 
@@ -2717,15 +2740,15 @@ async function translateText(context) {
     }
 
     if (!textToTranslate) {
-      context.ui.notice('没有可翻译的内容', 'err', 2000)
+      context.ui.notice(aiText('没有可翻译的内容', 'Nothing to translate'), 'err', 2000)
       return
     }
 
-    translatingNoticeId = showLongRunningNotice(context, '正在翻译...')
+    translatingNoticeId = showLongRunningNotice(context, aiText('正在翻译...', 'Translating...'))
 
     // 构造翻译请求
-    const system = '你是专业的翻译助手。'
-    const prompt = buildPromptPrefix('翻译') + '\n\n' + textToTranslate
+    const system = aiText('你是专业的翻译助手。', 'You are a professional translation assistant.')
+    const prompt = buildPromptPrefix(aiText('翻译', 'Translate')) + '\n\n' + textToTranslate
 
     // 构造临时配置对象用于翻译调用
     const transCfg = useFreeTrans ? { ...cfg, provider: 'free' } : cfg
@@ -2796,11 +2819,11 @@ async function translateText(context) {
       const cfg = await loadCfg(context)
       const isFree = isFreeProvider(cfg)
       if (!cfg.apiKey && !isFree) {
-        context.ui.notice('请先在"设置"中配置 API Key', 'err', 3000)
+        context.ui.notice(aiText('请先在\"设置\"中配置 API Key', 'Please configure API Key in Settings first'), 'err', 3000)
         return
       }
       if (!cfg.model && !isFree) {
-        context.ui.notice('请先选择模型', 'err', 2000)
+        context.ui.notice(aiText('请先选择模型', 'Please choose a model first'), 'err', 2000)
         return
     }
 
@@ -2822,7 +2845,7 @@ async function translateText(context) {
     // 获取文档内容（如果有选区，使用选区内容；否则使用整个文档）
     const content = hasSelection ? String(selectionInfo.text || '').trim() : String(context.getEditorValue() || '').trim()
     if (!content) {
-      context.ui.notice(hasSelection ? '选中内容为空' : '文档内容为空', 'err', 2000)
+      context.ui.notice(hasSelection ? aiText('选中内容为空', 'Selected content is empty') : aiText('文档内容为空', 'Document content is empty'), 'err', 2000)
       return
     }
 
@@ -2830,7 +2853,7 @@ async function translateText(context) {
     if (!hasSelection) {
       context.setEditorValue(GENERATING_MARKER + context.getEditorValue())
     }
-    generatingNoticeId = showLongRunningNotice(context, '正在分析文章生成待办事项并创建提醒...')
+    generatingNoticeId = showLongRunningNotice(context, aiText('正在分析文章生成待办事项并创建提醒...', 'Analyzing document and creating reminders...'))
 
     const { system, prompt } = buildTodoPrompt(content)
 
@@ -2958,11 +2981,11 @@ async function generateTodos(context){
       const cfg = await loadCfg(context)
       const isFree = isFreeProvider(cfg)
       if (!cfg.apiKey && !isFree) {
-        context.ui.notice('请先在"设置"中配置 API Key', 'err', 3000)
+        context.ui.notice(aiText('请先在\"设置\"中配置 API Key', 'Please configure API Key in Settings first'), 'err', 3000)
         return
       }
       if (!cfg.model && !isFree) {
-        context.ui.notice('请先选择模型', 'err', 2000)
+        context.ui.notice(aiText('请先选择模型', 'Please choose a model first'), 'err', 2000)
         return
     }
 
@@ -2977,7 +3000,7 @@ async function generateTodos(context){
     // 获取文档内容（如果有选区，使用选区内容；否则使用整个文档）
     const content = hasSelection ? String(selectionInfo.text || '').trim() : String(context.getEditorValue() || '').trim()
     if (!content) {
-      context.ui.notice(hasSelection ? '选中内容为空' : '文档内容为空', 'err', 2000)
+      context.ui.notice(hasSelection ? aiText('选中内容为空', 'Selected content is empty') : aiText('文档内容为空', 'Document content is empty'), 'err', 2000)
       return
     }
 
@@ -2985,7 +3008,7 @@ async function generateTodos(context){
     if (!hasSelection) {
       context.setEditorValue(GENERATING_MARKER + context.getEditorValue())
     }
-    generatingNoticeId = showLongRunningNotice(context, '正在分析文章生成待办事项...')
+    generatingNoticeId = showLongRunningNotice(context, aiText('正在分析文章生成待办事项...', 'Analyzing document and generating todos...'))
 
     const { system, prompt } = buildTodoPrompt(content)
 
@@ -3016,7 +3039,7 @@ async function generateTodos(context){
           context.setEditorValue(currentContent.replace(GENERATING_MARKER, ''))
         }
       }
-      context.ui.notice('AI 未能生成待办事项', 'err', 3000)
+      context.ui.notice(aiText('AI 未能生成待办事项', 'AI did not generate any todos'), 'err', 3000)
       return
     }
 
@@ -3245,8 +3268,8 @@ async function sendFromInputWithAction(context){
     if (__AI_SENDING__) return
     const cfg = await loadCfg(context)
     const isFree = isFreeProvider(cfg)
-    if (!cfg.apiKey && !isFree) { context.ui.notice('请先在“设置”中配置 OpenAI API Key', 'err', 3000); return }
-    if (!cfg.model && !isFree) { context.ui.notice('请先选择模型', 'err', 2000); return }
+    if (!cfg.apiKey && !isFree) { context.ui.notice(aiText('请先在“设置”中配置 OpenAI API Key', 'Please configure OpenAI API Key in Settings first'), 'err', 3000); return }
+    if (!cfg.model && !isFree) { context.ui.notice(aiText('请先选择模型', 'Please choose a model first'), 'err', 2000); return }
     __AI_SENDING__ = true
     try {
       await ensureSessionForDoc(context)
@@ -3255,13 +3278,19 @@ async function sendFromInputWithAction(context){
 
       // 添加当前时间上下文
       const now = new Date()
-      const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+      const weekdays = aiGetLocale() === 'en'
+        ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+        : ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
       const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const weekday = weekdays[now.getDay()]
-      const timeContext = `今天是 ${currentDate} ${weekday} ${currentTime}`
+      const timeContext = aiGetLocale() === 'en'
+        ? `Today is ${currentDate} ${weekday} ${currentTime}`
+        : `今天是 ${currentDate} ${weekday} ${currentTime}`
 
-      const system = `你是专业的中文写作助手，回答要简洁、实用、可直接落地。当前时间：${timeContext}`
+      const system = aiGetLocale() === 'en'
+        ? `You are a professional writing assistant. Answer concisely and practically, with suggestions that can be directly applied. Current time: ${timeContext}`
+        : `你是专业的中文写作助手，回答要简洁、实用、可直接落地。当前时间：${timeContext}`
       const userMsgs = __AI_SESSION__.messages
 
       const visionOn = isVisionEnabledForConfig(cfg)
@@ -3452,28 +3481,28 @@ async function sendFromInputWithAction(context){
 
 async function applyLastToDoc(context){
   const s = String(__AI_LAST_REPLY__||'').trim()
-  if (!s) { context.ui.notice('没有可插入的内容', 'err', 2000); return }
+  if (!s) { context.ui.notice(aiText('没有可插入的内容', 'No content to insert'), 'err', 2000); return }
   const cur = String(context.getEditorValue() || '')
   const next = cur + (cur.endsWith('\n')?'':'\n') + '\n' + s + '\n'
   context.setEditorValue(next)
-  context.ui.notice('已插入文末', 'ok', 1600)
+  context.ui.notice(aiText('已插入文末', 'Inserted at document end'), 'ok', 1600)
 }
 
 async function applyLastAtCursor(context){
   const s = String(__AI_LAST_REPLY__||'').trim()
-  if (!s) { context.ui.notice('没有可插入的内容', 'err', 2000); return }
+  if (!s) { context.ui.notice(aiText('没有可插入的内容', 'No content to insert'), 'err', 2000); return }
   try { await context.insertAtCursor('\n' + s + '\n') } catch { try { const cur = String(context.getEditorValue()||''); context.setEditorValue(cur + (cur.endsWith('\n')?'':'\n') + s + '\n') } catch {} }
-  context.ui.notice('已在光标处插入', 'ok', 1400)
+  context.ui.notice(aiText('已在光标处插入', 'Inserted at cursor'), 'ok', 1400)
 }
 
 async function replaceSelectionWithLast(context){
   const s = String(__AI_LAST_REPLY__||'').trim()
-  if (!s) { context.ui.notice('没有可插入的内容', 'err', 2000); return }
+  if (!s) { context.ui.notice(aiText('没有可插入的内容', 'No content to insert'), 'err', 2000); return }
   try {
     const sel = await context.getSelection?.()
-    if (sel && sel.end > sel.start) { await context.replaceRange(sel.start, sel.end, s) ; context.ui.notice('已替换选区', 'ok', 1400); return }
+    if (sel && sel.end > sel.start) { await context.replaceRange(sel.start, sel.end, s) ; context.ui.notice(aiText('已替换选区', 'Selection replaced'), 'ok', 1400); return }
   } catch {}
-  context.ui.notice('没有选区，已改为光标处插入', 'ok', 1400)
+  context.ui.notice(aiText('没有选区，已改为光标处插入', 'No selection, inserted at cursor'), 'ok', 1400)
   await applyLastAtCursor(context)
 }
 
@@ -3488,21 +3517,21 @@ export async function openSettings(context){
   overlay.id = 'ai-set-overlay'
   overlay.innerHTML = [
     '<div id="ai-set-dialog">',
-    ' <div id="ai-set-head"><div id="ai-set-title">AI 设置</div><button id="ai-set-close" title="关闭">×</button></div>',
+    ' <div id="ai-set-head"><div id="ai-set-title">' + aiText('AI 设置', 'AI Settings') + '</div><button id="ai-set-close" title="' + aiText('关闭', 'Close') + '">×</button></div>',
     ' <div id="ai-set-body">',
-    '  <div class="set-row mode-row"><label>模式</label><span class="mode-label" id="mode-label-custom">自定义</span><label class="toggle-switch"><input type="checkbox" id="set-provider-toggle"/><span class="toggle-slider"></span></label><span class="mode-label" id="mode-label-free">免费模型</span></div>',
-    '  <div class="set-row mode-row"><label>翻译免费</label><span style="font-size:12px;color:#6b7280;">翻译功能始终使用免费模型</span><label class="toggle-switch"><input type="checkbox" id="set-trans-free-toggle"/><span class="toggle-slider"></span></label></div>',
-    '  <div class="free-warning" id="free-warning">免费模型由硅基流动提供，<a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">推荐注册硅基流动账号获得顶级模型体验</a></div>',
-    '  <div class="set-row custom-only"><label>Base URL</label><select id="set-base-select"><option value="https://api.siliconflow.cn/v1">硅基流动</option><option value="https://api.openai.com/v1">OpenAI</option><option value="https://apic1.ohmycdn.com/api/v1/ai/openai/cc-omg/v1">OMG资源包</option><option value="custom">自定义</option></select><input id="set-base" type="text" placeholder="https://api.siliconflow.cn/v1"/></div>',
+    '  <div class="set-row mode-row"><label>' + aiText('模式', 'Mode') + '</label><span class="mode-label" id="mode-label-custom">' + aiText('自定义', 'Custom') + '</span><label class="toggle-switch"><input type="checkbox" id="set-provider-toggle"/><span class="toggle-slider"></span></label><span class="mode-label" id="mode-label-free">' + aiText('免费模型', 'Free model') + '</span></div>',
+    '  <div class="set-row mode-row"><label>' + aiText('翻译免费', 'Free translation') + '</label><span style="font-size:12px;color:#6b7280;">' + aiText('翻译功能始终使用免费模型', 'Always use free model for translation') + '</span><label class="toggle-switch"><input type="checkbox" id="set-trans-free-toggle"/><span class="toggle-slider"></span></label></div>',
+    '  <div class="free-warning" id="free-warning">' + aiText('免费模型由硅基流动提供，', 'Free models are provided by SiliconFlow, ') + '<a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' + aiText('推荐注册硅基流动账号获得顶级模型体验', 'we recommend registering a SiliconFlow account for top-tier models') + '</a></div>',
+    '  <div class="set-row custom-only"><label>Base URL</label><select id="set-base-select"><option value="https://api.siliconflow.cn/v1">' + aiText('硅基流动', 'SiliconFlow') + '</option><option value="https://api.openai.com/v1">OpenAI</option><option value="https://apic1.ohmycdn.com/api/v1/ai/openai/cc-omg/v1">' + aiText('OMG资源包', 'OMG pack') + '</option><option value="custom">' + aiText('自定义', 'Custom') + '</option></select><input id="set-base" type="text" placeholder="https://api.siliconflow.cn/v1"/></div>',
     '  <div class="set-row custom-only"><label>API Key</label><input id="set-key" type="password" placeholder="sk-..."/></div>',
-    '  <div class="set-row custom-only"><label>模型</label><input id="set-model" type="text" placeholder="gpt-4o-mini"/></div>',
-    '  <div class="set-row"><label>侧栏宽度(px)</label><input id="set-sidew" type="number" min="400" step="10" placeholder="400"/></div>',
-    '  <div class="set-row"><label>上下文截断</label><input id="set-max" type="number" min="1000" step="500" placeholder="6000"/></div>',
-    '  <div class="set-row set-link-row custom-only"><a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer">点此注册硅基流动得2000万免费Token</a></div>',
-    '  <div class="set-row set-link-row custom-only"><a href="https://x.dogenet.win/i/dXCKvZ6Q" target="_blank" rel="noopener noreferrer">点此注册OMG获得20美元Claude资源包</a></div>',
+    '  <div class="set-row custom-only"><label>' + aiText('模型', 'Model') + '</label><input id="set-model" type="text" placeholder="gpt-4o-mini"/></div>',
+    '  <div class="set-row"><label>' + aiText('侧栏宽度(px)', 'Sidebar width (px)') + '</label><input id="set-sidew" type="number" min="400" step="10" placeholder="400"/></div>',
+    '  <div class="set-row"><label>' + aiText('上下文截断', 'Context limit') + '</label><input id="set-max" type="number" min="1000" step="500" placeholder="6000"/></div>',
+    '  <div class="set-row set-link-row custom-only"><a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer">' + aiText('点此注册硅基流动得2000万免费Token', 'Click to register at SiliconFlow to get 20M free tokens') + '</a></div>',
+    '  <div class="set-row set-link-row custom-only"><a href="https://x.dogenet.win/i/dXCKvZ6Q" target="_blank" rel="noopener noreferrer">' + aiText('点此注册OMG获得20美元Claude资源包', 'Click to register OMG to get 20 USD Claude credits') + '</a></div>',
     '  <div class="powered-by-img" id="powered-by-container" style="display:none;text-align:center;margin:12px 0 4px 0;"><a href="https://cloud.siliconflow.cn/i/X96CT74a" target="_blank" rel="noopener noreferrer" style="border:none;outline:none;"><img id="powered-by-img" src="" alt="Powered by" style="max-width:180px;height:auto;cursor:pointer;border:none;outline:none;"/></a></div>',
     ' </div>',
-    ' <div id="ai-set-actions"><button id="ai-set-cancel">取消</button><button class="primary" id="ai-set-ok">保存</button></div>',
+    ' <div id="ai-set-actions"><button id="ai-set-cancel">' + aiText('取消', 'Cancel') + '</button><button class="primary" id="ai-set-ok">' + aiText('保存', 'Save') + '</button></div>',
     '</div>'
   ].join('')
   // 检查 AI 窗口是否存在且可见
@@ -3610,7 +3639,7 @@ export async function openSettings(context){
     const next = { ...cfg, provider, alwaysUseFreeTrans, baseUrl, apiKey, model, limits: { maxCtxChars: n }, win: { ...(cfg.win||{}), w: sidew, x: cfg.win?.x||60, y: cfg.win?.y||60, h: cfg.win?.h||440 } }
     await saveCfg(context, next)
     const m = el('ai-model'); if (m) m.value = model
-    context.ui.notice('设置已保存', 'ok', 1600)
+    context.ui.notice(aiText('设置已保存', 'Settings saved'), 'ok', 1600)
     try {
       const pane = el('ai-assist-win')
       if (pane) {
@@ -3636,7 +3665,11 @@ export async function activate(context) {
   try { __AI_SESSION__ = await loadSession(context) } catch {}
 
   // 菜单：AI 助手（显示/隐藏）
-  __AI_MENU_ITEM__ = context.addMenuItem({ label: 'AI 助手', title: '打开 AI 写作助手', onClick: async () => { await toggleWindow(context) } })
+  __AI_MENU_ITEM__ = context.addMenuItem({
+    label: aiText('AI 助手', 'AI Assistant'),
+    title: aiText('打开 AI 写作助手', 'Open AI Assistant'),
+    onClick: async () => { await toggleWindow(context) }
+  })
 
   // 订阅宿主工作区布局变更（库侧栏开关等），保持 dock 模式下的位置与宽度同步
   try {
@@ -3656,11 +3689,11 @@ export async function activate(context) {
   if (context.addContextMenuItem) {
     try {
       __AI_CTX_MENU_DISPOSER__ = context.addContextMenuItem({
-        label: 'AI 助手',
+        label: aiText('AI 助手', 'AI Assistant'),
         icon: '🤖',
         children: [
           {
-            label: '打开 AI 助手',
+            label: aiText('打开 AI 助手', 'Open AI Assistant'),
             icon: '💬',
             onClick: async () => {
               await toggleWindow(context)
@@ -3669,10 +3702,10 @@ export async function activate(context) {
           { type: 'divider' },
           {
             type: 'group',
-            label: '快捷操作'
+            label: aiText('快捷操作', 'Quick actions')
           },
           {
-            label: '续写',
+            label: aiText('续写', 'Continue writing'),
             icon: '✍️',
             onClick: async () => {
               await ensureWindow(context)
@@ -3682,7 +3715,7 @@ export async function activate(context) {
             }
           },
           {
-            label: '润色',
+            label: aiText('润色', 'Polish'),
             icon: '✨',
             onClick: async () => {
               await ensureWindow(context)
@@ -3692,7 +3725,7 @@ export async function activate(context) {
             }
           },
           {
-            label: '纠错',
+            label: aiText('纠错', 'Correct'),
             icon: '✅',
             onClick: async () => {
               await ensureWindow(context)
@@ -3702,7 +3735,7 @@ export async function activate(context) {
             }
           },
           {
-            label: '提纲',
+            label: aiText('提纲', 'Outline'),
             icon: '📋',
             onClick: async () => {
               await ensureWindow(context)
@@ -3712,23 +3745,23 @@ export async function activate(context) {
             }
           },
           {
-            label: '待办',
+            label: aiText('待办', 'Todo'),
             icon: '📝',
             children: [
               {
-                label: '生成待办',
+                label: aiText('生成待办', 'Generate todos'),
                 onClick: async () => {
                   await generateTodos(context)
                 }
               },
               {
-                label: '生成并创建提醒',
+                label: aiText('生成并创建提醒', 'Generate and create reminders'),
                 onClick: async () => {
                   await generateTodosAndPush(context)
                 }
               },
               {
-                label: '生成 TODO 便签',
+                label: aiText('生成 TODO 便签', 'Generate TODO sticky note'),
                 onClick: async (ctx) => {
                   // 1. 取文本：选区优先，其次整篇文档
                   let selectionInfo = null
@@ -3743,7 +3776,7 @@ export async function activate(context) {
                     ? String(selectionInfo.text || '').trim()
                     : String(context.getEditorValue() || '').trim()
                   if (!content) {
-                    context.ui.notice(hasSelection ? '选中内容为空' : '文档内容为空', 'err', 2000)
+                    context.ui.notice(hasSelection ? aiText('选中内容为空', 'Selected content is empty') : aiText('文档内容为空', 'Document content is empty'), 'err', 2000)
                     return
                   }
 
@@ -3757,7 +3790,7 @@ export async function activate(context) {
             ]
           },
           {
-            label: '翻译',
+            label: aiText('翻译', 'Translate'),
             icon: '🌐',
             onClick: async () => {
               await translateText(context)
@@ -3871,7 +3904,7 @@ async function clearConversation(context) {
     if (it) { it.messages = [] ; it.updated = Date.now() }
     await saveSessionsDB(context)
     const chat = el('ai-chat'); if (chat) renderMsgs(chat)
-    context.ui.notice('会话已清空（仅当前文档）', 'ok', 1400)
+    context.ui.notice(aiText('会话已清空（仅当前文档）', 'Conversation cleared (current document only)'), 'ok', 1400)
   } catch {}
 }
 

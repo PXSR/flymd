@@ -41,6 +41,59 @@ let indexState = {
   vaultRoot: '',
 }
 
+// 插件配置：目前只控制“是否启用基于元数据 tags 的连接”
+const BACKLINKS_SETTINGS_STORAGE_KEY = 'backlinksSettings_v1'
+let backlinksSettings = {
+  // 默认关闭：仅基于显式 [[链接]] 计算反向链接
+  enableMetaTagLinks: false,
+}
+
+async function loadBacklinksSettings(context) {
+  try {
+    if (!context || !context.storage || typeof context.storage.get !== 'function') {
+      backlinksSettings = { enableMetaTagLinks: false }
+      return
+    }
+    const raw = await context.storage.get(BACKLINKS_SETTINGS_STORAGE_KEY)
+    if (raw && typeof raw === 'object') {
+      backlinksSettings = {
+        enableMetaTagLinks: !!raw.enableMetaTagLinks,
+      }
+    } else {
+      backlinksSettings = { enableMetaTagLinks: false }
+    }
+  } catch {
+    // 配置读取失败时退回默认关闭，避免影响正常使用
+    backlinksSettings = { enableMetaTagLinks: false }
+  }
+}
+
+async function saveBacklinksSettings(context) {
+  try {
+    if (!context || !context.storage || typeof context.storage.set !== 'function') return
+    await context.storage.set(BACKLINKS_SETTINGS_STORAGE_KEY, {
+      enableMetaTagLinks: !!backlinksSettings.enableMetaTagLinks,
+    })
+  } catch {
+    // 配置持久化失败不影响功能，只是下次重启会丢失
+  }
+}
+
+function isMetaTagLinksEnabled() {
+  return !!(backlinksSettings && backlinksSettings.enableMetaTagLinks)
+}
+
+function setMetaTagLinksEnabled(context, enabled) {
+  backlinksSettings.enableMetaTagLinks = !!enabled
+  // 异步写入，不阻塞 UI
+  try {
+    // 不关心 Promise 结果，失败时静默
+    saveBacklinksSettings(context)
+  } catch {
+    // 忽略保存异常
+  }
+}
+
 // 周期刷新定时器与 Panel 根节点引用
 let _pollTimer = null
 let _panelRoot = null
@@ -1049,34 +1102,37 @@ function getBacklinksForCurrent(context) {
     }
   }
 
-  // 2）同标签文档：基于 YAML front matter 里的 tags 元数据
-  const selfInfo = indexState.docs.get(norm)
-  const selfTags = selfInfo && Array.isArray(selfInfo.tags) ? selfInfo.tags : []
-  if (selfTags && selfTags.length) {
-    const tagSet = new Set()
-    for (const t of selfTags) {
-      const s = String(t || '').trim()
-      if (!s) continue
-      tagSet.add(s.toLowerCase())
-    }
-    if (tagSet.size) {
-      for (const [key, info] of indexState.docs.entries()) {
-        if (!key || key === norm) continue
-        if (resultKeys.has(key)) continue
-        if (!info) continue
-        const docTags = Array.isArray(info.tags) ? info.tags : []
-        if (!docTags.length) continue
-        let hit = false
-        for (const t of docTags) {
-          const s = String(t || '').trim()
-          if (!s) continue
-          if (tagSet.has(s.toLowerCase())) {
-            hit = true
-            break
+  // 2）同标签文档：基于 YAML/front matter 或宿主元数据里的 tags
+  // 受用户“元数据连接”开关控制
+  if (isMetaTagLinksEnabled()) {
+    const selfInfo = indexState.docs.get(norm)
+    const selfTags = selfInfo && Array.isArray(selfInfo.tags) ? selfInfo.tags : []
+    if (selfTags && selfTags.length) {
+      const tagSet = new Set()
+      for (const t of selfTags) {
+        const s = String(t || '').trim()
+        if (!s) continue
+        tagSet.add(s.toLowerCase())
+      }
+      if (tagSet.size) {
+        for (const [key, info] of indexState.docs.entries()) {
+          if (!key || key === norm) continue
+          if (resultKeys.has(key)) continue
+          if (!info) continue
+          const docTags = Array.isArray(info.tags) ? info.tags : []
+          if (!docTags.length) continue
+          let hit = false
+          for (const t of docTags) {
+            const s = String(t || '').trim()
+            if (!s) continue
+            if (tagSet.has(s.toLowerCase())) {
+              hit = true
+              break
+            }
           }
-        }
-        if (hit) {
-          resultKeys.add(key)
+          if (hit) {
+            resultKeys.add(key)
+          }
         }
       }
     }
@@ -1567,6 +1623,36 @@ function renderBacklinksPanel(context, panelRoot) {
   }
   container.appendChild(sub)
 
+  // 简单设置区：元数据连接开关
+  const settingsWrap = document.createElement('div')
+  settingsWrap.style.display = 'flex'
+  settingsWrap.style.alignItems = 'center'
+  settingsWrap.style.justifyContent = 'flex-start'
+  settingsWrap.style.fontSize = '11px'
+  settingsWrap.style.color = '#555'
+  settingsWrap.style.margin = '0 6px 4px'
+
+  const metaCheckbox = document.createElement('input')
+  metaCheckbox.type = 'checkbox'
+  metaCheckbox.style.marginRight = '4px'
+  metaCheckbox.checked = isMetaTagLinksEnabled()
+  metaCheckbox.addEventListener('change', () => {
+    const next = !!metaCheckbox.checked
+    setMetaTagLinksEnabled(context, next)
+    // 勾选动作实时刷新列表
+    renderBacklinksPanel(context, panelRoot)
+  })
+
+  const metaLabel = document.createElement('span')
+  metaLabel.textContent = backlinksText(
+    '按标签（元数据）补全反向链接',
+    'Include tag-based (metadata) backlinks',
+  )
+
+  settingsWrap.appendChild(metaCheckbox)
+  settingsWrap.appendChild(metaLabel)
+  container.appendChild(settingsWrap)
+
   const listWrap = document.createElement('div')
   listWrap.style.overflowY = 'auto'
   listWrap.style.fontSize = '13px'
@@ -1898,7 +1984,8 @@ async function loadAiRelatedDocs(context, currentNorm) {
 }
 
 export async function activate(context) {
-  // 启动时先尝试加载已有索引
+  // 启动时先尝试加载用户配置与已有索引
+  await loadBacklinksSettings(context)
   await loadIndexFromStorage(context)
 
   // 将索引通过插件 API 暴露出去，供其他插件（关系图等）复用

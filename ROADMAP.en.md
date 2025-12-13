@@ -3,6 +3,15 @@
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
 
+## Update v0.7.4
+- Added: Published the “Property View” extension, which shows document metadata fields in a column-based sidebar table so you can browse and filter your library by properties as a foundation for attribute-driven knowledge management.
+- Added: Published the “Notes & Tasks Calendar” extension that aggregates todos and notes by day on a calendar view, letting you scan and jump to tasks directly from the calendar.
+- Added: Published the “Knowledge Whiteboard” extension with a dedicated canvas for nodes and edges that can link back to existing notes, helping you lay out knowledge structures visually.
+- Improved: The AutoYAML Metadata extension now works together with the Property View, auto-filling front matter so that properties appear directly in the property table and are easier to maintain.
+- Improved: Completed English dictionaries and in-app copy for extensions such as the high-precision PDF parser, MinerU parser and Smart Floating Toolbar, so users in English locale get full prompts and descriptions.
+- Improved: Extended the i18n runtime with a `flymd:localeChanged` event so plugins can listen for language changes and re-register themselves or refresh UI copy to keep Chinese/English views in sync.
+- Improved: After switching the app language, flyMD now shows a “please restart” suggestion to avoid display glitches caused by stale language state in some extensions or windows.
+
 ## Update v0.7.3
 - Added: New “Extension Menu Manager” dialog under the “Plugins” menu that lists all context-menu entries and “Plugins” dropdown actions registered by extensions, letting you toggle visibility per extension to declutter the UI without uninstalling plugins.
 - Added: Published the “AutoYAML Metadata” extension, which can automatically add YAML front matter to the current document (such as title and tags) and optionally call the AI assistant to generate tags and a summary, making it easier to maintain a more structured knowledge base.
@@ -599,5 +608,4 @@ This version focuses on stability and detail experience optimization, main chang
 - Added: LaTeX (based on KaTeX) rendering support
 - Added: Mermaid flowchart/sequence diagram etc. rendering support
 - Added shortcuts: Ctrl+B bold, Ctrl+I italic, Ctrl+K insert link
-
 

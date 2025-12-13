@@ -142,6 +142,40 @@ function normalizeBaseUrlForKey(url: string): string {
   }
 }
 
+function shouldSyncRelativePath(rel: string, nameOpt?: string): boolean {
+  try {
+    const raw = String(rel || nameOpt || '').trim()
+    if (!raw) return false
+    let r = raw.replace(/\\/g, '/')
+    r = r.replace(/^\/+/, '')
+    const lower = r.toLowerCase()
+    // 默认扩展名白名单
+    const nm = lower.split('/').pop() || ''
+    const ext = (nm.split('.').pop() || '').toLowerCase()
+    const allowExts = [
+      'md',
+      'markdown',
+      'txt',
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'svg',
+      'pdf',
+    ]
+    if (allowExts.includes(ext)) return true
+    // 额外同步前缀：相对于库根目录
+    for (const p of _extraSyncPrefixes) {
+      if (!p) continue
+      if (lower === p) return true
+      if (lower.startsWith(p + '/')) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
 async function hashProfileKey(input: string): Promise<string> {
   try {
     const data = new TextEncoder().encode(input)
@@ -389,7 +423,7 @@ async function quickSummarizeLocal(root: string): Promise<LocalStructureHint> {
   let totalDirs = 0
   let maxMtime = 0
 
-  async function walk(dir: string) {
+  async function walk(dir: string, rel: string) {
     let ents: any[] = []
     try { ents = await readDir(dir, { recursive: false } as any) as any[] } catch { ents = [] }
     for (const e of ents) {
@@ -397,6 +431,7 @@ async function quickSummarizeLocal(root: string): Promise<LocalStructureHint> {
       if (!name) continue
       if (name.startsWith('.')) continue
       const full = dir + (dir.includes('\\') ? '\\' : '/') + name
+      const relp = rel ? rel + '/' + name : name
       try {
         let isDir = !!(e as any)?.isDirectory
         if ((e as any)?.isDirectory === undefined) {
@@ -404,9 +439,10 @@ async function quickSummarizeLocal(root: string): Promise<LocalStructureHint> {
         }
         if (isDir) {
           totalDirs++
-          await walk(full)
+          await walk(full, relp)
         } else {
-          if (!/\.(md|markdown|txt|png|jpg|jpeg|gif|svg|pdf)$/i.test(name)) continue
+          const relUnix = relp.replace(/\\/g, '/')
+          if (!shouldSyncRelativePath(relUnix, name)) continue
           totalFiles++
           try {
             const meta = await stat(full)
@@ -418,7 +454,7 @@ async function quickSummarizeLocal(root: string): Promise<LocalStructureHint> {
     }
   }
 
-  await walk(root)
+  await walk(root, '')
   return { totalDirs, totalFiles, maxMtime }
 }
 
@@ -448,11 +484,37 @@ export type WebdavSyncConfig = {
   encryptSalt?: string
 }
 
+// 插件可注册的额外同步路径（相对库根目录）
+export type WebdavExtraSyncPath = {
+  type: 'prefix'
+  path: string
+}
+
 let _store: Store | null = null
 async function getStore(): Promise<Store> {
   if (_store) return _store
   _store = await Store.load('flymd-settings.json')
   return _store
+}
+
+// 额外同步路径（由插件注册），使用目录前缀匹配
+const _extraSyncPrefixes: string[] = []
+
+export function registerExtraSyncPaths(paths: WebdavExtraSyncPath[] | any): void {
+  try {
+    const arr = Array.isArray(paths) ? paths : [paths]
+    for (const it of arr) {
+      if (!it || (it as any).type !== 'prefix') continue
+      const raw = String((it as any).path || '').trim()
+      if (!raw) continue
+      let p = raw.replace(/\\/g, '/')
+      p = p.replace(/^\/+/, '').replace(/\/+$/, '')
+      if (!p) continue
+      const key = p.toLowerCase()
+      if (_extraSyncPrefixes.includes(key)) continue
+      _extraSyncPrefixes.push(key)
+    }
+  } catch {}
 }
 
 // Base64 编解码工具（用于存储盐值）
@@ -790,7 +852,7 @@ if (name.startsWith('.')) { await syncLog('[scan-skip-hidden] ' + (rel ? rel + '
           const mt = toEpochMs((meta as any)?.modifiedAt || (meta as any)?.mtime || (meta as any)?.mtimeMs)
           const size = Number((meta as any)?.size || 0)
           const __relUnix = relp.replace(/\\\\/g, '/')
-          if (!/\.(md|markdown|txt|png|jpg|jpeg|gif|svg|pdf)$/i.test(__relUnix)) continue
+          if (!shouldSyncRelativePath(__relUnix)) continue
 
           fileCount++
           if (fileCount % 10 === 0) {
@@ -986,7 +1048,7 @@ async function tryListRemoteInfinity(baseUrl: string, auth: { username: string; 
       if (isDir) {
         dirsProps[rel] = { mtime: mt, etag }
       } else {
-        if (/\.(md|markdown|txt|png|jpg|jpeg|gif|svg|pdf)$/i.test(rel)) {
+        if (shouldSyncRelativePath(rel)) {
           map.set(rel, { path: rel, mtime: toEpochMs(mt), size: 0, etag })
         }
       }
@@ -1050,7 +1112,9 @@ async function listRemoteRecursively(
         subDirs.push({ name: f.name, rel: r, needDive: true })
       } else {
         fileCount++
-        map.set(r, { path: r, mtime: toEpochMs(f.mtime), size: 0, etag: f.etag })
+        if (shouldSyncRelativePath(r)) {
+          map.set(r, { path: r, mtime: toEpochMs(f.mtime), size: 0, etag: f.etag })
+        }
       }
     }
 
@@ -2567,4 +2631,3 @@ async function ensureRemoteDir(baseUrl: string, auth: { username: string; passwo
     for (const p of parts) { cur += '/' + p; try { await mkcol(baseUrl, auth, cur) } catch {} }
   } catch {}
 }
-

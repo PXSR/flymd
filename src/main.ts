@@ -8560,9 +8560,58 @@ function bindEvents() {
       })
     ric(async () => {
       try {
-        setOnSyncComplete(async () => {
-          try { await refreshLibraryUiAndTree(true) } catch (e) { console.warn('[WebDAV] 刷新库失败:', e) }
-        })
+        // 将 WebDAV 插件 API 暴露给插件宿主
+        try {
+          const anyWin = window as any
+          const pluginCallbacks: Array<(reason: any) => void> =
+            (anyWin.__webdavPluginCallbacks =
+              anyWin.__webdavPluginCallbacks || [])
+          anyWin.__webdavPluginApi = {
+            getConfig: async () => {
+              try {
+                return await getWebdavSyncConfig()
+              } catch {
+                return null
+              }
+            },
+            registerExtraPaths: async (paths: any[]) => {
+              try {
+                if (!paths) return
+                if (!Array.isArray(paths)) paths = [paths]
+                // 直接交给 WebDAV 扩展内部处理
+                try {
+                  const mod: any = await import('./extensions/webdavSync')
+                  if (typeof mod.registerExtraSyncPaths === 'function') {
+                    mod.registerExtraSyncPaths(paths)
+                  }
+                } catch {}
+              } catch {}
+            },
+            onSyncComplete: (cb: (reason: any) => void) => {
+              try {
+                if (typeof cb !== 'function') return
+                pluginCallbacks.push(cb)
+              } catch {}
+            },
+          }
+          // 把 WebDAV 同步完成统一汇总：刷新库树 + 通知插件
+          setOnSyncComplete(async () => {
+            try {
+              await refreshLibraryUiAndTree(true)
+            } catch (e) {
+              console.warn('[WebDAV] 刷新库失败:', e)
+            }
+            try {
+              const list: Array<(r: any) => void> =
+                (window as any).__webdavPluginCallbacks || []
+              for (const fn of list) {
+                try {
+                  fn('manual')
+                } catch {}
+              }
+            } catch {}
+          })
+        } catch {}
         await initWebdavSync()
       } catch (e) {
         console.warn('[WebDAV] 延迟初始化失败:', e)
@@ -8825,6 +8874,9 @@ const pluginRuntime: PluginRuntimeHandles = initPluginRuntime({
   },
   openUploaderSettings: () => { void openUploaderDialog() },
   openWebdavSettings: () => { void openWebdavSyncDialog() },
+  getWebdavConfigSnapshot: async () => {
+    try { return await getWebdavSyncConfig() } catch { return null }
+  },
 })
 
 const {

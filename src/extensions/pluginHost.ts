@@ -1801,6 +1801,16 @@ export function createPluginHost(
           throw e
         }
       },
+      // WebDAV 辅助能力：供插件查询配置与订阅同步完成事件
+      getWebdavAPI: () => {
+        try {
+          const anyWin = window as any
+          const webdavApi = anyWin && anyWin.__webdavPluginApi
+          return webdavApi || null
+        } catch {
+          return null
+        }
+      },
     }
 
     try {

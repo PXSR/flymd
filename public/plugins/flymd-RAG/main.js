@@ -11,6 +11,9 @@ const SCHEMA_VERSION = 1
 const META_FILE = 'meta.json'
 const VEC_FILE = 'vectors.f32'
 const INDEX_LOG_FILE = 'flymd-rag-index.log'
+// 统一的库内元数据与索引目录（相对于库根目录）
+const LIBRARY_META_DIR = '.flymd'
+const RAG_INDEX_DIR = '.flymd/rag-index'
 
 // 避免固定字符串被滥用：与 AI 助手保持一致，用于生成 X-Flymd-Token
 const FLYMD_TOKEN_SECRET = 'flymd-rolling-secret-v1'
@@ -22,7 +25,8 @@ const DEFAULT_CFG = {
   includeDirs: [],
   excludeDirs: [],
   maxDepth: 32,
-  indexDir: '', // 为空=默认（插件数据目录）；非空=使用该目录作为索引存储根目录
+  // 索引目录：新版本统一固定在库内 .flymd/rag-index/<libraryId>/，不再允许用户自定义
+  indexDir: '',
   // 分块：优先按 Markdown 标题段落切分（更贴近语义），再做长度上限
   chunk: { maxChars: 512, overlapChars: 0, byHeading: true },
   embedding: {
@@ -32,6 +36,8 @@ const DEFAULT_CFG = {
     model: 'text-embedding-3-small',
   },
   search: { topK: 8, minScore: 0, contextMaxChars: 1024 },
+  // 是否将索引视为库内容并通过 WebDAV 在多端同步
+  cloudSyncEnabled: false,
 }
 
 let FLYSMART_CTX = null
@@ -726,19 +732,57 @@ async function getLibraryRootRequired(ctx) {
   return String(root)
 }
 
+// 读取/生成跨设备稳定的库ID，存放在库根的 .flymd/library-id.json 中
+async function getStableLibraryId(ctx, root) {
+  const base = String(root || '').trim()
+  if (!base) throw new Error('库根目录为空')
+  const sep = base.includes('\\') ? '\\' : '/'
+  const metaDir = base + sep + LIBRARY_META_DIR.replace(/\//g, sep)
+  const file = metaDir + sep + 'library-id.json'
+  let id = ''
+  try {
+    if (typeof ctx.exists === 'function') {
+      const ok = await ctx.exists(file)
+      if (ok && typeof ctx.readTextFile === 'function') {
+        try {
+          const raw = await ctx.readTextFile(file)
+          const json = JSON.parse(String(raw || ''))
+          if (json && typeof json.id === 'string' && json.id.trim()) {
+            id = String(json.id).trim()
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  if (!id) {
+    // 生成新的随机ID（简单 uuid 风格即可）
+    const rnd = () => Math.random().toString(16).slice(2)
+    id = `lib-${Date.now().toString(16)}-${rnd()}${rnd()}`
+    try {
+      if (typeof ctx.ensureDir === 'function') {
+        await ctx.ensureDir(metaDir)
+      }
+      if (typeof ctx.writeTextFile === 'function') {
+        await ctx.writeTextFile(file, JSON.stringify({ id }, null, 2))
+      }
+    } catch {}
+  }
+  return id
+}
+
 async function getLibraryKey(ctx) {
   const root = await getLibraryRootRequired(ctx)
-  return await sha1Hex(normalizePathForKey(root))
+  return await getStableLibraryId(ctx, root)
 }
 
 async function getIndexDataDir(ctx, cfg, libraryRoot, opt) {
-  const dir = cfg && cfg.indexDir ? normalizeDirPath(cfg.indexDir) : ''
-  if (!dir) return await ctx.getPluginDataDir()
+  const root = String(libraryRoot || '').trim()
+  if (!root) throw new Error('库根目录为空')
   const cfgKey =
-    cfg && cfg.libraryKey ? String(cfg.libraryKey) : (await sha1Hex(normalizePathForKey(libraryRoot)))
-  const base = normalizeDirPath(dir)
+    cfg && cfg.libraryKey ? String(cfg.libraryKey) : (await getStableLibraryId(ctx, root))
+  const base = normalizeDirPath(root + '/' + RAG_INDEX_DIR)
   const sep = base.includes('\\') ? '\\' : '/'
-  const target = base + sep + ['flymd', 'rag-index', cfgKey].join(sep)
+  const target = base + sep + cfgKey
   if (opt && opt.ensure === false) return target
   if (typeof ctx.ensureDir === 'function') {
     const ok = await ctx.ensureDir(target)
@@ -2592,13 +2636,14 @@ async function openSettingsDialog(settingsCtx) {
   rowExclude.appendChild(textareaExclude)
   rowExclude.appendChild(exclTip)
 
+  const rootForUi = await getLibraryRootRequired(runtime)
   const rowIndexDir = document.createElement('div')
   rowIndexDir.className = 'flysmart-row'
   const indexDirLabel = document.createElement('div')
   indexDirLabel.style.fontWeight = '600'
   indexDirLabel.textContent = ragText(
-    '索引存储目录（可选）',
-    'Index storage directory (optional)',
+    '索引存储目录',
+    'Index storage directory',
   )
   const indexDirBar = document.createElement('div')
   indexDirBar.style.display = 'flex'
@@ -2607,71 +2652,60 @@ async function openSettingsDialog(settingsCtx) {
   indexDirBar.style.alignItems = 'center'
   const inputIndexDir = document.createElement('input')
   inputIndexDir.className = 'flysmart-input'
-  inputIndexDir.placeholder = ragText(
-    '留空=默认（插件数据目录）',
-    'Empty = default plugin data directory',
-  )
-  inputIndexDir.value = String(cfg.indexDir || '')
+  inputIndexDir.readOnly = true
   inputIndexDir.style.flex = '1'
   inputIndexDir.style.minWidth = '260px'
-  const btnPickIndexDir = document.createElement('button')
-  btnPickIndexDir.className = 'flysmart-btn'
-  btnPickIndexDir.textContent = ragText('浏览', 'Browse')
+  const btnOpenIndexDir = document.createElement('button')
+  btnOpenIndexDir.className = 'flysmart-btn'
+  btnOpenIndexDir.textContent = ragText('打开目录', 'Open folder')
   const indexDirTip = document.createElement('div')
   indexDirTip.className = 'flysmart-tip'
 
-  const rootForUi = await getLibraryRootRequired(runtime)
   const refreshIndexDirTip = async () => {
     try {
-      const tmp = { ...cfg, indexDir: normalizeDirPath(inputIndexDir.value || '') }
-      const eff = await getIndexDataDir(runtime, tmp, rootForUi, { ensure: false })
-      const zh = tmp.indexDir
-        ? `实际保存到：${eff}（目录变更会自动搬迁旧索引）`
-        : `实际保存到：${eff}（默认；目录变更会自动搬迁旧索引）`
-      const en = tmp.indexDir
-        ? `Effective path: ${eff} (index files are automatically migrated when directory changes).`
-        : `Effective path: ${eff} (default; index files are automatically migrated when directory changes).`
+      const eff = await getIndexDataDir(runtime, cfg, rootForUi, { ensure: false })
+      inputIndexDir.value = eff
+      const zh = `索引统一保存在库内：${eff}`
+      const en = `Index is stored inside library: ${eff}`
       indexDirTip.textContent = ragText(zh, en)
     } catch {
       indexDirTip.textContent = ragText(
-        '目录变更会自动搬迁旧索引',
-        'Index directory changes will automatically migrate existing index files.',
+        '索引统一保存在当前库内 .flymd/rag-index 中',
+        'Index is stored under .flymd/rag-index inside the library.',
       )
     }
   }
-  inputIndexDir.addEventListener('input', () => {
-    try { void refreshIndexDirTip() } catch {}
-  })
   await refreshIndexDirTip()
 
-  btnPickIndexDir.onclick = async () => {
-    btnPickIndexDir.disabled = true
+  btnOpenIndexDir.onclick = async () => {
+    btnOpenIndexDir.disabled = true
     try {
-      if (typeof runtime.pickDirectory !== 'function') {
-        throw new Error(
-          ragText('宿主版本过老：缺少 pickDirectory', 'Host version is too old: missing pickDirectory'),
-        )
-      }
-      const picked = await runtime.pickDirectory({
-        defaultPath: String(inputIndexDir.value || '').trim() || undefined,
-      })
-      if (!picked) return
-      inputIndexDir.value = String(picked || '').trim()
-      await refreshIndexDirTip()
+      const eff = await getIndexDataDir(runtime, cfg, rootForUi, { ensure: true })
+      // 优先使用宿主暴露的原生 openPath 能力，直接在系统文件管理器中打开目录
+      try {
+        const anyWin = typeof window !== 'undefined' ? window : null
+        const openInNew = anyWin && (anyWin).flymdOpenInNewInstance
+        if (typeof openInNew === 'function') {
+          await openInNew(eff)
+        } else if (typeof runtime.openFileByPath === 'function') {
+          // 回退：尝试用 openFileByPath 打开（可能只支持文件）
+          await runtime.openFileByPath(eff)
+        }
+      } catch {}
     } catch (e) {
       uiNotice(
         settingsCtx,
-        e && e.message ? e.message : ragText('选择目录失败', 'Failed to choose directory'),
+        e && e.message ? e.message : ragText('打开索引目录失败', 'Failed to open index directory'),
         'err',
         2400,
       )
     } finally {
-      btnPickIndexDir.disabled = false
+      btnOpenIndexDir.disabled = false
     }
   }
 
   indexDirBar.appendChild(inputIndexDir)
-  indexDirBar.appendChild(btnPickIndexDir)
+  indexDirBar.appendChild(btnOpenIndexDir)
   rowIndexDir.appendChild(indexDirLabel)
   rowIndexDir.appendChild(indexDirBar)
   rowIndexDir.appendChild(indexDirTip)
@@ -2685,6 +2719,50 @@ async function openSettingsDialog(settingsCtx) {
   const btnSave = document.createElement('button')
   btnSave.className = 'flysmart-btn primary'
   btnSave.textContent = ragText('保存设置', 'Save settings')
+
+  // 索引云同步开关
+  const rowCloud = document.createElement('div')
+  rowCloud.className = 'flysmart-row'
+  const cloudLabel = document.createElement('div')
+  cloudLabel.style.fontWeight = '600'
+  cloudLabel.textContent = ragText('索引云同步', 'Index cloud sync')
+  const cloudBar = document.createElement('div')
+  cloudBar.style.display = 'flex'
+  cloudBar.style.alignItems = 'center'
+  cloudBar.style.gap = '10px'
+  const inputCloud = document.createElement('input')
+  inputCloud.type = 'checkbox'
+  inputCloud.checked = !!cfg.cloudSyncEnabled
+  const cloudTip = document.createElement('div')
+  cloudTip.className = 'flysmart-tip'
+  const updateCloudTip = (webdavCfg) => {
+    if (!webdavCfg || !webdavCfg.enabled) {
+      cloudTip.textContent = ragText(
+        '需要为当前库配置并启用 WebDAV，同步才会生效。未启用时索引仅保存在本机。',
+        'WebDAV sync must be configured and enabled for this library; otherwise the index stays local only.'
+      )
+    } else {
+      cloudTip.textContent = ragText(
+        '启用后，会将当前文库的索引文件视为库内容，随 WebDAV 在多端同步；关闭时索引仅在本机使用。',
+        'When enabled, index files are treated as part of the library and synced via WebDAV across devices; when disabled, index remains local.'
+      )
+    }
+  }
+  let webdavConfigSnapshot = null
+  try {
+    const webdav = runtime && typeof runtime.getWebdavAPI === 'function' ? runtime.getWebdavAPI() : null
+    if (webdav && typeof webdav.getConfig === 'function') {
+      webdavConfigSnapshot = await webdav.getConfig()
+    }
+  } catch {}
+  updateCloudTip(webdavConfigSnapshot)
+  if (!webdavConfigSnapshot || !webdavConfigSnapshot.enabled) {
+    inputCloud.disabled = true
+  }
+  cloudBar.appendChild(inputCloud)
+  rowCloud.appendChild(cloudLabel)
+  rowCloud.appendChild(cloudBar)
+  rowCloud.appendChild(cloudTip)
 
   const btnIndex = document.createElement('button')
   btnIndex.className = 'flysmart-btn'
@@ -2754,7 +2832,9 @@ async function openSettingsDialog(settingsCtx) {
           .split(/\r?\n/)
           .map((x) => x.trim())
           .filter(Boolean),
-        indexDir: normalizeDirPath(inputIndexDir.value || ''),
+        // indexDir 不再暴露给用户配置，这里仅保留旧字段用于兼容加载；保存时固定为空，统一走库内目录
+        indexDir: '',
+        cloudSyncEnabled: !!inputCloud.checked,
         embedding: embPatch,
       }
       const preview = normalizeConfig({ ...DEFAULT_CFG, ...cfg, ...(patch || {}) })
@@ -3212,6 +3292,30 @@ async function openSettingsDialog(settingsCtx) {
 
 export function activate(context) {
   FLYSMART_CTX = context
+
+  // WebDAV 集成：在启用云同步时，将索引目录注册为额外同步路径
+  ;(async () => {
+    try {
+      const cfg = await loadConfig(context)
+      const webdav = context && typeof context.getWebdavAPI === 'function' ? context.getWebdavAPI() : null
+      if (webdav && cfg && cfg.cloudSyncEnabled && typeof webdav.registerExtraPaths === 'function') {
+        const libKey = cfg.libraryKey || (await getLibraryKey(context))
+        const prefix = `${RAG_INDEX_DIR}/${libKey}`
+        webdav.registerExtraPaths([{ type: 'prefix', path: prefix }])
+      }
+      if (webdav && typeof webdav.onSyncComplete === 'function') {
+        try {
+          webdav.onSyncComplete(() => {
+            try {
+              FLYSMART_CACHE = { libraryKey: '', meta: null, vectors: null }
+            } catch {}
+          })
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('[flymd-RAG] WebDAV 集成失败', e)
+    }
+  })().catch(() => {})
 
   try {
     if (context && typeof context.registerAPI === 'function') {

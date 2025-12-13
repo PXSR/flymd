@@ -61,6 +61,8 @@ export type PluginRuntimeDeps = {
   createStickyNote: (filePath: string) => Promise<void>
   openUploaderSettings: () => void | Promise<void>
   openWebdavSettings: () => void | Promise<void>
+  // WebDAV 相关：供插件基础设施使用
+  getWebdavConfigSnapshot?: () => Promise<any | null>
 }
 
 export type PluginRuntimeHandles = {

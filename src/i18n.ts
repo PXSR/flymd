@@ -392,7 +392,7 @@ const dict = {
     'ext.typechoManager.name': 'Typecho 博文管理',
     'ext.typechoManager.author': '作者：flyMD',
     'ext.typechoManager.desc': '从 Typecho 拉取博文列表并下载为本地 Markdown，支持按时间 / 分类筛选，同时支持从当前文档覆盖远端文章，实现本地与博客的双向同步。',
-    'ext.builtin.uploaderS3.name': '图床 (S3/R2)',
+    'ext.builtin.uploaderS3.name': 'S3/R2 图床',
     'ext.builtin.uploaderS3.desc': '粘贴/拖拽图片自动上传，支持 S3/R2 直连，使用设置中的凭据。',
     'ext.builtin.webdav.name': 'WebDAV 同步',
     'ext.builtin.webdav.desc': 'F5/启动/关闭前同步，基于修改时间覆盖。',

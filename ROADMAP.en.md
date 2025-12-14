@@ -3,6 +3,12 @@
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
 
+## Update v0.8.0
+- Added: Font size setting (applies consistently across Source/Preview/WYSIWYG views)
+- Improved: Unified default font size to 16px (Source/Preview/WYSIWYG are consistent)
+- Improved: Built-in “AI Assistant” chat now supports KaTeX formulas and uses a wider content layout
+- Fixed: “Save as PDF” could be truncated and lose styles; export now preserves layout/styles
+
 ## Update v0.7.9
 - Fixed: When the OS is in dark mode but the user explicitly turns off Night Mode , the UI could still render with dark-theme artifacts
 
@@ -635,4 +641,3 @@ This version focuses on stability and detail experience optimization, main chang
 - Added: LaTeX (based on KaTeX) rendering support
 - Added: Mermaid flowchart/sequence diagram etc. rendering support
 - Added shortcuts: Ctrl+B bold, Ctrl+I italic, Ctrl+K insert link
-

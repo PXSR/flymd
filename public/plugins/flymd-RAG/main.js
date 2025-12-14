@@ -37,6 +37,13 @@ const DEFAULT_CFG = {
   },
   search: { topK: 8, minScore: 0, contextMaxChars: 1024 },
   // 是否将索引视为库内容并通过 WebDAV 在多端同步
+  // 注意：索引属于“可再生缓存”，同步它的收益远小于风险（尤其是新设备首次同步时）。
+  // 当前版本：UI 隐藏 + 功能禁用（不再注册 WebDAV extra paths），统一保持为 false。
+  // 若未来要恢复，请先在宿主 WebDAV 同步实现按路径的安全规则，至少包括：
+  // 1) 首次同步永远以远端为准，禁止新设备用“刚生成的空文件”去赢冲突
+  // 2) 首次冲突或无历史时强制“保留远程”（download），本地不允许上传覆盖
+  // 3) 无历史时默认只允许下载远端；只有本机明确重建/修改过且有历史记录时才允许上传
+  // 4) 加“本地 0 字节/明显更小 → 直接选远端”的硬规则
   cloudSyncEnabled: false,
 }
 
@@ -665,6 +672,8 @@ function normalizeConfig(cfg) {
   }
   out.enabled = !!out.enabled
   out.indexDir = normalizeDirPath(out.indexDir || '')
+  // 索引云同步已禁用：无论历史配置如何，都强制关闭（避免遗留配置导致继续同步）
+  out.cloudSyncEnabled = false
   out.includeExtensions = normalizeExtensions(out.includeExtensions)
   out.includeDirs = normalizeDirPrefixes(out.includeDirs)
   out.excludeDirs = normalizeDirPrefixes(out.excludeDirs)
@@ -2720,7 +2729,9 @@ async function openSettingsDialog(settingsCtx) {
   btnSave.className = 'flysmart-btn primary'
   btnSave.textContent = ragText('保存设置', 'Save settings')
 
-  // 索引云同步开关
+  // 索引云同步开关（已禁用/隐藏）
+  // 说明：同步索引需要宿主先实现“首次同步远端优先”等安全规则，否则新设备的空文件可能覆盖远端有效索引。
+  /*
   const rowCloud = document.createElement('div')
   rowCloud.className = 'flysmart-row'
   const cloudLabel = document.createElement('label')
@@ -2760,6 +2771,7 @@ async function openSettingsDialog(settingsCtx) {
   }
   rowCloud.appendChild(cloudLabel)
   rowCloud.appendChild(cloudTip)
+  */
 
   const btnIndex = document.createElement('button')
   btnIndex.className = 'flysmart-btn'
@@ -2831,7 +2843,7 @@ async function openSettingsDialog(settingsCtx) {
           .filter(Boolean),
         // indexDir 不再暴露给用户配置，这里仅保留旧字段用于兼容加载；保存时固定为空，统一走库内目录
         indexDir: '',
-        cloudSyncEnabled: !!inputCloud.checked,
+        // cloudSyncEnabled: !!inputCloud.checked, // 索引云同步已禁用/隐藏
         embedding: embPatch,
       }
       const preview = normalizeConfig({ ...DEFAULT_CFG, ...cfg, ...(patch || {}) })
@@ -2842,7 +2854,9 @@ async function openSettingsDialog(settingsCtx) {
       }
       const next = await saveConfig(runtime, patch)
       cfg = next
-      // 保存后同步更新 WebDAV 额外同步路径（支持开关即时生效）
+      // 保存后同步更新 WebDAV 额外同步路径（已禁用）
+      // 若未来要恢复同步，请先让宿主实现“首次同步远端优先”等规则（见 DEFAULT_CFG.cloudSyncEnabled 的注释），再打开这里。
+      /*
       try {
         const webdav = runtime && typeof runtime.getWebdavAPI === 'function' ? runtime.getWebdavAPI() : null
         if (webdav && typeof webdav.registerExtraPaths === 'function') {
@@ -2856,6 +2870,7 @@ async function openSettingsDialog(settingsCtx) {
           webdav.registerExtraPaths({ owner: 'flymd-RAG', paths: prefixes })
         }
       } catch {}
+      */
       if (mig && mig.changed && mig.copied > 0 && mig.oldDir) {
         await cleanupIndexFiles(runtime, mig.oldDir)
       }
@@ -3280,7 +3295,7 @@ async function openSettingsDialog(settingsCtx) {
   body.appendChild(rowInclude)
   body.appendChild(rowExclude)
   body.appendChild(rowIndexDir)
-  body.appendChild(rowCloud)
+  // body.appendChild(rowCloud) // 索引云同步已禁用/隐藏
   body.appendChild(rowActions)
   body.appendChild(rowRebuildAllTip)
   body.appendChild(rowRebuildDoc)
@@ -3305,7 +3320,11 @@ async function openSettingsDialog(settingsCtx) {
 export function activate(context) {
   FLYSMART_CTX = context
 
-  // WebDAV 集成：在启用云同步时，将索引目录注册为额外同步路径
+  // WebDAV 集成（已禁用）：不再注册索引目录为额外同步路径
+  // 若未来要恢复同步：
+  // - 先让宿主 WebDAV 同步实现按路径的安全规则（见 DEFAULT_CFG.cloudSyncEnabled 的注释）
+  // - 再把下面这段取消注释，并确保不让新设备的空索引覆盖远端
+  /*
   ;(async () => {
     try {
       const cfg = await loadConfig(context)
@@ -3333,6 +3352,7 @@ export function activate(context) {
       console.warn('[flymd-RAG] WebDAV 集成失败', e)
     }
   })().catch(() => {})
+  */
 
   try {
     if (context && typeof context.registerAPI === 'function') {
@@ -3411,6 +3431,19 @@ export async function openSettings(context) {
 export function deactivate() {
   closeDialog()
   stopIncrementalWatch()
+  // 索引云同步已禁用：
+  // - 这里不再做任何 WebDAV extra paths 的注册/卸载
+  // - 若未来要恢复同步：除了恢复 activate/saveConfig 里的 registerExtraPaths，还必须让宿主实现“首次同步远端优先”等规则（见 DEFAULT_CFG.cloudSyncEnabled 注释）
+  /*
+  try {
+    const ctx = FLYSMART_CTX
+    const webdav = ctx && typeof ctx.getWebdavAPI === 'function' ? ctx.getWebdavAPI() : null
+    if (webdav && typeof webdav.registerExtraPaths === 'function') {
+      // 卸载时主动清空（可选）：防止宿主保留旧的额外同步前缀
+      webdav.registerExtraPaths({ owner: 'flymd-RAG', paths: [] })
+    }
+  } catch {}
+  */
   try {
     FLYSMART_INCR_QUEUE = []
     FLYSMART_INCR_SET = new Set()

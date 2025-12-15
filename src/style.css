@@ -2209,9 +2209,11 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 }
 
 .theme-focus-row {
-  display: flex;
+  display: grid;
   align-items: center;
   gap: 8px;
+  /* 自动换行：窗口窄时折行，但每个开关文案保持单行 */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .theme-toggle-label {
@@ -2230,8 +2232,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 }
 
 .theme-toggle-label.theme-toggle-third {
-  /* 5 个开关一行，减去 4 个 8px 的间距后平均分配 */
-  width: calc((100% - 32px) / 5);
+  width: auto;
   gap: 8px;
 }
 
@@ -2266,6 +2267,11 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
   font-size: 14px;
   font-weight: 500;
   color: var(--fg);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .theme-toggle-switch {

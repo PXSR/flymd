@@ -2,6 +2,7 @@ import { $view } from '@milkdown/utils'
 import { htmlSchema } from '@milkdown/preset-commonmark'
 import type { Node } from '@milkdown/prose/model'
 import type { EditorView, NodeView } from '@milkdown/prose/view'
+import { createSafeTableElement, parseSimpleHtmlTable } from './htmlTable'
 
 class HtmlMediaNodeView implements NodeView {
   dom: HTMLElement
@@ -68,6 +69,19 @@ class HtmlMediaNodeView implements NodeView {
         return
       }
 
+      const isTableTag = /^<table\b[\s\S]*<\/table>\s*$/i.test(trimmed)
+      if (isTableTag) {
+        const parsed = parseSimpleHtmlTable(trimmed)
+        if (parsed) {
+          try {
+            const table = createSafeTableElement(parsed)
+            span.appendChild(table)
+            this.dom = span
+            return
+          } catch { /* fallthrough */ }
+        }
+      }
+
       span.textContent = value
       this.dom = span
     } catch {
@@ -86,4 +100,3 @@ export const htmlMediaPlugin = $view(htmlSchema.node, () => {
     return new HtmlMediaNodeView(node, view, getPos as () => number | undefined)
   }
 })
-

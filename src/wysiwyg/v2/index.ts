@@ -17,6 +17,7 @@ import { uploader } from './plugins/paste'
 import { mermaidPlugin } from './plugins/mermaid'
 import { mathInlineViewPlugin, mathBlockViewPlugin } from './plugins/math'
 import { htmlMediaPlugin } from './plugins/htmlMedia'
+import { maybeConvertHtmlTableBlocksToGfm } from './plugins/htmlTable'
 import { remarkMathPlugin, katexOptionsCtx, mathInlineSchema, mathBlockSchema, mathInlineInputRule, mathBlockInputRule } from '@milkdown/plugin-math'
 // 注：保留 automd 插件以提供编辑功能，通过 CSS 隐藏其 UI 组件
 // 引入富文本所见视图的必要样式（避免工具条/布局错乱导致不可编辑/不可滚动）
@@ -46,6 +47,26 @@ let _codeCopyResizeObserver: ResizeObserver | null = null
 let _codeCopyWindowResizeHandler: (() => void) | null = null
 let _inlineCodeMouseTimer: number | null = null
 let _rootMouseDownHandler: ((ev: MouseEvent) => void) | null = null
+
+async function applyHtmlTableToGfmIfEnabled(): Promise<void> {
+  if (!_editor) return
+  try {
+    const mdNow = await (_editor as any).action(getMarkdown())
+    const next = maybeConvertHtmlTableBlocksToGfm(String(mdNow || ''))
+    if (next !== String(mdNow || '')) {
+      await (_editor as any).action(replaceAll(next))
+    }
+  } catch {}
+}
+
+// 主题面板开关：无需重启所见模式也能立即生效
+try {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('flymd:wysiwyg:htmlTableToMd', () => {
+      void applyHtmlTableToGfmIfEnabled()
+    })
+  }
+} catch {}
 
 // 根据 DOM 元素删除 Milkdown 文档中的对应节点（仅用于所见模式内简易删除）
 function deleteWysiwygNodeByDom(el: HTMLElement | null, typeNames: string[]): void {
@@ -223,7 +244,8 @@ function cleanupEditorOnly() {
 
 export async function enableWysiwygV2(root: HTMLElement, initialMd: string, onChange: (md: string) => void) {
   // 规范化内容：空内容也是合法的（新文档或空文档）
-  const content = (initialMd || '').toString()
+  const content0 = (initialMd || '').toString()
+  const content = maybeConvertHtmlTableBlocksToGfm(content0)
   console.log('[WYSIWYG V2] enableWysiwygV2 called, content length:', content.length)
 
   // 仅销毁旧编辑器与观察器，保留外层传入的 root（避免被移除导致空白）
@@ -461,7 +483,8 @@ export async function wysiwygV2ReplaceAll(markdown: string) {
     const ctx: any = (_editor as any).ctx
     // 若 editorView 尚未就绪或已被销毁，直接跳过，避免 MilkdownError 冒泡
     try { ctx.get(editorViewCtx) } catch { return }
-    await _editor.action(replaceAll(markdown))
+    const next = maybeConvertHtmlTableBlocksToGfm(String(markdown || ''))
+    await _editor.action(replaceAll(next))
   } catch {}
 }
 
@@ -2050,8 +2073,6 @@ export function wysiwygV2GetSelectedText(): string {
     return ''
   }
 }
-
-
 
 
 

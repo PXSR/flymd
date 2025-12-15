@@ -556,6 +556,13 @@ function createPanel(): HTMLDivElement {
             <span class="theme-toggle-slider"></span>
           </div>
         </label>
+        <label class="theme-toggle-label theme-toggle-third theme-toggle-boxed" for="wysiwyg-html-table-toggle" title="${t('theme.wysiwygHtmlTable.tip')}">
+          <span class="theme-toggle-text">${t('theme.wysiwygHtmlTable')}</span>
+          <div class="theme-toggle-switch">
+            <input type="checkbox" id="wysiwyg-html-table-toggle" class="theme-toggle-input" />
+            <span class="theme-toggle-slider"></span>
+          </div>
+        </label>
         <label class="theme-toggle-label theme-toggle-third theme-toggle-boxed" for="dark-mode-toggle">
           <span class="theme-toggle-text">${t('theme.darkMode')}</span>
           <div class="theme-toggle-switch">
@@ -1452,9 +1459,11 @@ export function initThemeUI(): void {
     // 默认模式相关开关（所见 / 源码）
     const wysiwygDefaultToggle = panel.querySelector('#wysiwyg-default-toggle') as HTMLInputElement | null
     const sourcemodeDefaultToggle = panel.querySelector('#sourcemode-default-toggle') as HTMLInputElement | null
+    const wysiwygHtmlTableToggle = panel.querySelector('#wysiwyg-html-table-toggle') as HTMLInputElement | null
 
     const WYSIWYG_DEFAULT_KEY = 'flymd:wysiwyg:default'
     const SOURCEMODE_DEFAULT_KEY = 'flymd:sourcemode:default'
+    const WYSIWYG_HTML_TABLE_TO_MD_KEY = 'flymd:wysiwyg:htmlTableToMd'
 
     const getWysiwygDefault = (): boolean => {
       try {
@@ -1482,6 +1491,21 @@ export function initThemeUI(): void {
       try {
         localStorage.setItem(SOURCEMODE_DEFAULT_KEY, enabled ? 'true' : 'false')
         const ev = new CustomEvent('flymd:sourcemode:default', { detail: { enabled } })
+        window.dispatchEvent(ev)
+      } catch {}
+    }
+
+    const getWysiwygHtmlTableToMd = (): boolean => {
+      try {
+        const v = localStorage.getItem(WYSIWYG_HTML_TABLE_TO_MD_KEY)
+        return v === 'true'
+      } catch { return false }
+    }
+
+    const setWysiwygHtmlTableToMd = (enabled: boolean) => {
+      try {
+        localStorage.setItem(WYSIWYG_HTML_TABLE_TO_MD_KEY, enabled ? 'true' : 'false')
+        const ev = new CustomEvent('flymd:wysiwyg:htmlTableToMd', { detail: { enabled } })
         window.dispatchEvent(ev)
       } catch {}
     }
@@ -1528,6 +1552,14 @@ export function initThemeUI(): void {
         }
 
         setSourcemodeDefault(enabled)
+      })
+    }
+
+    // 所见模式：HTML 表格转为可编辑的 Markdown 表格（进入所见/重载内容时生效）
+    if (wysiwygHtmlTableToggle) {
+      wysiwygHtmlTableToggle.checked = getWysiwygHtmlTableToMd()
+      wysiwygHtmlTableToggle.addEventListener('change', () => {
+        setWysiwygHtmlTableToMd(wysiwygHtmlTableToggle.checked)
       })
     }
 

@@ -76,6 +76,8 @@ let __AI_HLJS__ = null // highlight.js 实例
 let __AI_MD_WARNED__ = false // Markdown 渲染失败仅提示一次
 let __AI_DOCK_PANEL__ = null // 布局句柄（宿主统一管理推挤间距）
 let __AI_LAYOUT_UNSUB__ = null // 布局变更回调注销函数
+let __AI_DOCK_SYNC_CLEANUP__ = null // 自动同步 dock 布局的注销函数
+let __AI_DOCK_SYNC_SCHEDULED__ = false // 防止 resize 时重复触发同步
 
 function computeWorkspaceBounds() {
   try {
@@ -205,10 +207,60 @@ function syncDockedWindowWithWorkspace() {
     }
     if (dockBottom) {
       const currentHeight = parseInt(winEl.style.height) || 440
+      winEl.style.top = 'auto'
+      winEl.style.bottom = '0px'
       winEl.style.left = bounds.left + 'px'
       winEl.style.right = bounds.right + 'px'
       winEl.style.width = 'auto'
       setDockPush('bottom', currentHeight)
+    }
+  } catch {}
+}
+
+function scheduleDockedWindowSync() {
+  try {
+    if (__AI_DOCK_SYNC_SCHEDULED__) return
+    __AI_DOCK_SYNC_SCHEDULED__ = true
+    const win = WIN()
+    const run = () => {
+      __AI_DOCK_SYNC_SCHEDULED__ = false
+      try { syncDockedWindowWithWorkspace() } catch {}
+    }
+    if (win && typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(run)
+    else setTimeout(run, 16)
+  } catch {
+    try {
+      __AI_DOCK_SYNC_SCHEDULED__ = false
+      syncDockedWindowWithWorkspace()
+    } catch {}
+  }
+}
+
+function bindAutoDockSync() {
+  try {
+    if (__AI_DOCK_SYNC_CLEANUP__) return
+    const win = WIN()
+    const doc = DOC()
+    const onResize = () => { try { scheduleDockedWindowSync() } catch {} }
+    win.addEventListener('resize', onResize)
+
+    // 宿主窗口尺寸变化不一定等于工作区尺寸变化（库侧栏/插件面板也会挤压），用 RO 兜底
+    let ro = null
+    try {
+      const RO = win.ResizeObserver || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null)
+      if (typeof RO === 'function') {
+        ro = new RO(() => { try { scheduleDockedWindowSync() } catch {} })
+        const container = doc.querySelector('.container')
+        const lib = doc.getElementById('library')
+        if (container) { try { ro.observe(container) } catch {} }
+        if (lib) { try { ro.observe(lib) } catch {} }
+      }
+    } catch {}
+
+    __AI_DOCK_SYNC_CLEANUP__ = () => {
+      try { win.removeEventListener('resize', onResize) } catch {}
+      try { ro && ro.disconnect() } catch {}
+      __AI_DOCK_SYNC_CLEANUP__ = null
     }
   } catch {}
 }
@@ -2751,15 +2803,15 @@ async function mountWindow(context){
   })
   el.querySelector('#ai-menu-dock-left')?.addEventListener('click', async () => {
     el.querySelector('#ai-more-menu')?.classList.remove('show')
-    await setDockMode(context, el, 'left')
+    await setDockMode(context, el, 'left', { resetDockSize: true })
   })
   el.querySelector('#ai-menu-dock-right')?.addEventListener('click', async () => {
     el.querySelector('#ai-more-menu')?.classList.remove('show')
-    await setDockMode(context, el, 'right')
+    await setDockMode(context, el, 'right', { resetDockSize: true })
   })
   el.querySelector('#ai-menu-dock-bottom')?.addEventListener('click', async () => {
     el.querySelector('#ai-more-menu')?.classList.remove('show')
-    await setDockMode(context, el, 'bottom')
+    await setDockMode(context, el, 'bottom', { resetDockSize: true })
   })
   el.querySelector('#ai-menu-dock-float')?.addEventListener('click', async () => {
     el.querySelector('#ai-more-menu')?.classList.remove('show')
@@ -3141,9 +3193,15 @@ async function toggleDockMode(context, el){
 }
 
 // 直接设置停靠模式
-async function setDockMode(context, el, dockMode){
+async function setDockMode(context, el, dockMode, opts){
   try {
     const cfg = await loadCfg(context)
+    const resetDockSize = !!(opts && opts.resetDockSize)
+    if (resetDockSize) {
+      cfg.win = cfg.win || {}
+      if (dockMode === 'left' || dockMode === 'right') cfg.win.w = MIN_WIDTH
+      else if (dockMode === 'bottom') cfg.win.h = 400
+    }
     cfg.dock = dockMode
     await saveCfg(context, cfg)
 
@@ -4462,6 +4520,9 @@ export async function activate(context) {
     }
   } catch {}
 
+  // 监听宿主窗口/工作区变化，避免停靠窗口“只在点菜单后才刷新”的问题
+  try { bindAutoDockSync(); scheduleDockedWindowSync() } catch {}
+
   // 右键菜单：AI 助手快捷操作
   if (context.addContextMenuItem) {
     try {
@@ -4644,6 +4705,13 @@ export function deactivate(){
     }
   } catch {}
   __AI_LAYOUT_UNSUB__ = null
+  // 取消 dock 自动同步监听
+  try {
+    if (__AI_DOCK_SYNC_CLEANUP__ && typeof __AI_DOCK_SYNC_CLEANUP__ === 'function') {
+      __AI_DOCK_SYNC_CLEANUP__()
+    }
+  } catch {}
+  __AI_DOCK_SYNC_CLEANUP__ = null
   // 清理窗口
   try {
     const win = DOC().getElementById('ai-assist-win')

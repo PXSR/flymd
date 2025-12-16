@@ -641,6 +641,105 @@ async fn http_xmlrpc_post(req: XmlHttpReq) -> Result<String, String> {
   Ok(text)
 }
 
+// AI 小说引擎后端代理：绕过 WebView CORS/OPTIONS 预检限制（仅允许固定后端与固定路径前缀）
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiNovelApiReq {
+  path: String,
+  method: String,
+  #[serde(default)]
+  token: String,
+  #[serde(default)]
+  body: Option<serde_json::Value>,
+}
+
+fn ai_novel_base_url() -> &'static str {
+  "https://flymd.llingfei.com/xiaoshuo"
+}
+
+fn ai_novel_validate_path(path: &str) -> Result<String, String> {
+  let p = path.trim().trim_start_matches('/');
+  if p.is_empty() {
+    return Err("path 为空".into());
+  }
+  // 插件不可信：拒绝绝对 URL 和路径穿越
+  if p.contains("://") {
+    return Err("禁止传入绝对 URL".into());
+  }
+  if p.contains("..") {
+    return Err("禁止路径穿越".into());
+  }
+  let allow = ["auth/", "billing/", "ai/proxy/"];
+  if !allow.iter().any(|pre| p.starts_with(pre)) {
+    return Err("非法 path：仅允许 auth/ billing/ ai/proxy/".into());
+  }
+  Ok(p.to_string())
+}
+
+#[tauri::command]
+async fn ai_novel_api(req: AiNovelApiReq) -> Result<serde_json::Value, String> {
+  let path = ai_novel_validate_path(&req.path)?;
+  let method = req.method.trim().to_uppercase();
+  if method != "GET" && method != "POST" {
+    return Err("仅支持 GET/POST".into());
+  }
+
+  let base = ai_novel_base_url().trim_end_matches('/');
+  let url = format!("{}/{}", base, path);
+
+  let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(25))
+    .build()
+    .map_err(|e| format!("client error: {e}"))?;
+
+  let mut rb = if method == "GET" {
+    client.get(&url)
+  } else {
+    client.post(&url)
+  };
+
+  let token = req.token.trim();
+  if !token.is_empty() {
+    rb = rb.header("Authorization", format!("Bearer {}", token));
+  }
+
+  if method == "POST" {
+    let payload = req.body.unwrap_or_else(|| serde_json::json!({}));
+    rb = rb.header("Content-Type", "application/json").json(&payload);
+  }
+
+  let res = rb.send().await.map_err(|e| format!("send error: {e}"))?;
+  let status = res.status();
+  let text = res.text().await.map_err(|e| format!("read error: {e}"))?;
+
+  let json: Option<serde_json::Value> = if text.trim().is_empty() {
+    None
+  } else {
+    serde_json::from_str(&text).ok()
+  };
+
+  if !status.is_success() {
+    if let Some(j) = &json {
+      let msg = j
+        .get("error")
+        .and_then(|v| v.as_str())
+        .or_else(|| j.get("message").and_then(|v| v.as_str()))
+        .unwrap_or("");
+      if !msg.trim().is_empty() {
+        return Err(msg.trim().to_string());
+      }
+    }
+    return Err(format!("HTTP {}: {}", status.as_u16(), text));
+  }
+
+  let j = json.ok_or_else(|| "后端返回非 JSON".to_string())?;
+  if let Some(false) = j.get("ok").and_then(|v| v.as_bool()) {
+    let msg = j.get("error").and_then(|v| v.as_str()).unwrap_or("error");
+    return Err(msg.to_string());
+  }
+  Ok(j)
+}
+
 // PicList HTTP 代理：在后端通过 reqwest 调用本地 PicList 内置服务器，避免前端 HTTP scope 限制
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -801,8 +900,9 @@ fn main() {
         force_remove_path,
         read_text_file_any,
         write_text_file_any,
-        get_pending_open_path,
+      get_pending_open_path,
       http_xmlrpc_post,
+      ai_novel_api,
       flymd_piclist_upload,
       flymd_list_markdown_files,
       check_update,

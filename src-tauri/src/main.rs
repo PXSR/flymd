@@ -653,7 +653,7 @@ struct AiNovelApiReq {
   body: Option<serde_json::Value>,
 }
 
-fn ai_novel_base_url() -> &'static str {
+fn ai_novel_default_base_url() -> &'static str {
   "https://flymd.llingfei.com/xiaoshuo"
 }
 
@@ -684,7 +684,7 @@ async fn ai_novel_api(req: AiNovelApiReq) -> Result<serde_json::Value, String> {
     return Err("仅支持 GET/POST".into());
   }
 
-  let base = ai_novel_base_url().trim_end_matches('/');
+  let base = ai_novel_default_base_url().trim_end_matches('/');
   let url = format!("{}/{}", base, path);
   // 插件所有接口统一放宽超时：网络差/上游慢时避免误判失败
   let req_timeout = Duration::from_secs(180);

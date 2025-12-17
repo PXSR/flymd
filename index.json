@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2025-12-14T00:00:00Z",
+  "updatedAt": "2025-12-17T00:00:00Z",
   "ttlSeconds": 3600,
   "items": [
     {
@@ -322,6 +322,18 @@
       "category": "文档工具",
       "install": {
         "ref": "https://raw.githubusercontent.com/flyhunterl/flymd/main/public/plugins/note-templates/manifest.json",
+        "type": "manifest"
+      }
+    },
+    {
+      "homepage": "https://github.com/flyhunterl/flymd",
+      "name": "AI 小说引擎",
+      "description": "内部测试：非测试人员无法使用。",
+      "author": "flyMD",
+      "id": "ai-novel",
+      "category": "AI",
+      "install": {
+        "ref": "https://raw.githubusercontent.com/flyhunterl/flymd/main/public/plugins/ai-novel/manifest.json",
         "type": "manifest"
       }
     },

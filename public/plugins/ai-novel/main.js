@@ -1759,10 +1759,14 @@ async function openSettingsDialog(ctx) {
   btnRegister.className = 'ain-btn gray'
   btnRegister.style.marginLeft = '8px'
   btnRegister.textContent = t('注册', 'Register')
-  const btnDocs = document.createElement('button')
+  const btnDocs = document.createElement('a')
   btnDocs.className = 'ain-btn gray'
   btnDocs.style.marginLeft = '8px'
   btnDocs.textContent = t('使用文档', 'Docs')
+  btnDocs.href = 'https://www.llingfei.com/novel.html'
+  btnDocs.target = '_blank'
+  btnDocs.rel = 'noopener noreferrer'
+  btnDocs.style.textDecoration = 'none'
   const btnMe = document.createElement('button')
   btnMe.className = 'ain-btn gray'
   btnMe.style.marginLeft = '8px'
@@ -1863,53 +1867,43 @@ async function openSettingsDialog(ctx) {
     }
   }
 
-  async function openExternalLink(url) {
+  async function openExternalViaTauri(url) {
     const u = String(url || '').trim()
     if (!u) return false
-
-    // 桌面端（Tauri）：优先走系统默认浏览器（不依赖弹窗权限）
     try {
       const tauri = (globalThis && globalThis.__TAURI__) ? globalThis.__TAURI__ : null
-      const cands = [
-        () => tauri && tauri.opener && typeof tauri.opener.openUrl === 'function' && tauri.opener.openUrl(u),
-        () => tauri && tauri.plugin && tauri.plugin.opener && typeof tauri.plugin.opener.openUrl === 'function' && tauri.plugin.opener.openUrl(u),
-        () => tauri && tauri.shell && typeof tauri.shell.open === 'function' && tauri.shell.open(u),
-        () => tauri && tauri.plugin && tauri.plugin.shell && typeof tauri.plugin.shell.open === 'function' && tauri.plugin.shell.open(u),
-      ]
-      for (let i = 0; i < cands.length; i++) {
+      if (!tauri) return false
+      const open1 = tauri.opener && typeof tauri.opener.openUrl === 'function' ? tauri.opener.openUrl : null
+      const open2 = tauri.plugin && tauri.plugin.opener && typeof tauri.plugin.opener.openUrl === 'function' ? tauri.plugin.opener.openUrl : null
+      const open3 = tauri.shell && typeof tauri.shell.open === 'function' ? tauri.shell.open : null
+      const open4 = tauri.plugin && tauri.plugin.shell && typeof tauri.plugin.shell.open === 'function' ? tauri.plugin.shell.open : null
+      const fns = [open1, open2, open3, open4].filter(Boolean)
+      for (let i = 0; i < fns.length; i++) {
         try {
-          const r = cands[i]()
+          const r = fns[i](u)
           if (r && typeof r.then === 'function') await r
-          if (r !== false) return true
+          return true
         } catch {}
       }
-      // 兜底：直接 invoke（不同版本路径可能不一样，失败就忽略）
-      try { if (tauri && tauri.core && typeof tauri.core.invoke === 'function') { await tauri.core.invoke('plugin:opener|open_url', { url: u }); return true } } catch {}
-    } catch {}
-
-    // Web：尽量尝试打开新标签（可能被宿主禁用）
-    try { if (window && typeof window.open === 'function') { const w = window.open(u, '_blank'); if (w) return true } } catch {}
-    try {
-      const a = document.createElement('a')
-      a.href = u
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      return true
+      // 最后兜底：直接 invoke（版本差异大，失败就算了）
+      try { if (tauri.core && typeof tauri.core.invoke === 'function') { await tauri.core.invoke('plugin:opener|open_url', { url: u }); return true } } catch {}
     } catch {}
     return false
   }
 
-  btnDocs.onclick = async () => {
-    const url = 'https://www.llingfei.com/novel.html'
-    const ok = await openExternalLink(url)
-    if (ok) return
-    // 最后兜底：至少把链接给用户（否则等于“点击没反应”）
-    try { await navigator.clipboard.writeText(url); ctx.ui.notice(t('已复制文档链接到剪贴板', 'Docs link copied'), 'ok', 2400); return } catch {}
-    ctx.ui.notice(t('无法自动打开，请手动访问：', 'Cannot open automatically, please visit: ') + url, 'err', 4000)
-  }
+  btnDocs.addEventListener('click', async (ev) => {
+    // 关键点：必须是真实 <a href> 点击，宿主才可能拦截并用系统浏览器打开
+    // 我们只在确认走了 Tauri opener 时才阻止默认行为；否则放行给宿主/浏览器处理
+    try {
+      const url = btnDocs.href
+      const ok = await openExternalViaTauri(url)
+      if (ok) {
+        try { ev.preventDefault() } catch {}
+        return
+      }
+      // 不兜底弹窗：FlyMD 很可能禁了 window.open；默认行为比“假打开”靠谱
+    } catch {}
+  })
 
   btnMe.onclick = async () => {
     try {

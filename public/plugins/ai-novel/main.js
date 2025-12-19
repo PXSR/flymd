@@ -4712,9 +4712,9 @@ function _ainAgentNormalizePlanItem(raw, idx) {
 
 function buildFallbackAgentPlan(baseInstruction, targetChars, chunkCount, wantAudit) {
   const ins = safeText(baseInstruction).trim()
-  const t = _ainAgentNormTargetChars(targetChars, 3000)
-  const n = _clampInt(chunkCount != null ? chunkCount : _ainAgentDeriveChunkCount(t), 1, 3)
-  const perChunk = Math.max(600, Math.floor(t / n))
+  const totalChars = _ainAgentNormTargetChars(targetChars, 3000)
+  const n = _clampInt(chunkCount != null ? chunkCount : _ainAgentDeriveChunkCount(totalChars), 1, 3)
+  const perChunk = Math.max(600, Math.floor(totalChars / n))
   const plan = []
   plan.push({
     id: 'blueprint',
@@ -4741,7 +4741,7 @@ function buildFallbackAgentPlan(baseInstruction, targetChars, chunkCount, wantAu
       instruction: [
         ins,
         '',
-        `写作目标：本章总字数≈${t}。本段建议≈${perChunk} 字。`,
+        `写作目标：本章总字数≈${totalChars}。本段建议≈${perChunk} 字。`,
         `现在写第 ${i + 1}/${n} 段正文：承接前文，避免重复；保持叙事视角与风格一致；段尾自然收束但不要总结。`
       ].filter(Boolean).join('\n')
     })

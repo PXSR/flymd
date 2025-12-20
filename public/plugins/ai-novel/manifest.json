@@ -1,7 +1,7 @@
 {
   "id": "ai-novel",
   "name": "AI 小说引擎",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "author": "flyMD",
   "description": "长篇小说写作：（beta测试中）。",
   "i18n": {

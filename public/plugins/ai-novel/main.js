@@ -6641,6 +6641,45 @@ async function char_state_try_update_from_prev_chapter(ctx, cfg, reason, opt) {
   }
 }
 
+async function _ainTryReplaceFirstLineInPath(ctx, absPath, expectedLine, nextLine) {
+  try {
+    const p = String(absPath || '').trim()
+    if (!p) return false
+    const expected = safeText(expectedLine).trim()
+    const next = safeText(nextLine).trimEnd()
+    if (!expected || !next) return false
+
+    let curPath = ''
+    try {
+      if (ctx && typeof ctx.getCurrentFilePath === 'function') curPath = String(await ctx.getCurrentFilePath() || '')
+    } catch {}
+    const isCurrent = !!(curPath && normFsPath(curPath) === normFsPath(p))
+
+    const raw = isCurrent
+      ? safeText(ctx && ctx.getEditorValue ? (ctx.getEditorValue() || '') : '')
+      : safeText(await readTextAny(ctx, p))
+
+    if (!raw) return false
+
+    const m = /^([^\r\n]*)(\r?\n|$)/.exec(raw)
+    const firstLine = m && m[1] != null ? String(m[1]) : ''
+    const eol = m && m[2] != null ? String(m[2]) : '\n'
+    if (safeText(firstLine).trim() !== expected) return false
+
+    const headLen = m ? String(m[0] || '').length : 0
+    const rest = raw.slice(Math.max(0, headLen))
+    const replaced = next + (eol || '\n') + rest
+
+    if (isCurrent && ctx && typeof ctx.setEditorValue === 'function') {
+      try { ctx.setEditorValue(replaced) } catch {}
+    }
+    await writeTextAny(ctx, p, replaced)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function novel_create_next_chapter(ctx) {
   const cfg = await loadCfg(ctx)
   const inf = await computeNextChapterPath(ctx, cfg)
@@ -6655,6 +6694,7 @@ async function novel_create_next_chapter(ctx) {
   })
   if (!ok) return null
   const title = `# 第${inf.chapZh}章`
+  const titleBusy = '#正在更新人物状态……'
   await writeTextAny(ctx, inf.chapPath, title + '\n\n')
   let opened = false
   try {
@@ -6666,6 +6706,7 @@ async function novel_create_next_chapter(ctx) {
 
   // 自动更新人物状态：只在“开始下一章”时更新，避免草稿小片段导致信息丢失
   if (opened) {
+    try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, title, titleBusy) } catch {}
     let hold = null
     const r = await char_state_try_update_from_prev_chapter(ctx, cfg, t('开始下一章', 'Start next chapter'), {
       onBegin: () => {
@@ -6673,6 +6714,7 @@ async function novel_create_next_chapter(ctx) {
       }
     })
     ui_notice_hold_end(ctx, hold)
+    try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, titleBusy, title) } catch {}
     if (r && r.updated) {
       if (r.parseOk) {
         try { ctx.ui.notice(t('人物状态已更新（写入 06_人物状态.md）', 'Character states updated (written to 06_人物状态.md)'), 'ok', 2000) } catch {}
@@ -6706,6 +6748,7 @@ async function novel_create_next_volume(ctx) {
   })
   if (!ok) return null
   const title = `# 第${inf.volZh}卷 第一章`
+  const titleBusy = '#正在更新人物状态……'
   await writeTextAny(ctx, inf.chapPath, title + '\n\n')
   let opened = false
   try {
@@ -6717,6 +6760,7 @@ async function novel_create_next_volume(ctx) {
 
   // 新开卷后：同样用“上一卷最后一章”自动更新人物状态
   if (opened) {
+    try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, title, titleBusy) } catch {}
     let hold = null
     const r = await char_state_try_update_from_prev_chapter(ctx, cfg, t('新开一卷', 'Start new volume'), {
       onBegin: () => {
@@ -6724,6 +6768,7 @@ async function novel_create_next_volume(ctx) {
       }
     })
     ui_notice_hold_end(ctx, hold)
+    try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, titleBusy, title) } catch {}
     if (r && r.updated) {
       if (r.parseOk) {
         try { ctx.ui.notice(t('人物状态已更新（写入 06_人物状态.md）', 'Character states updated (written to 06_人物状态.md)'), 'ok', 2000) } catch {}

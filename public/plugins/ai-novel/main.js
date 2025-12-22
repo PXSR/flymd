@@ -9883,7 +9883,8 @@ async function callNovelRevise(ctx, cfg, baseText, instruction, localConstraints
     rag = await rag_get_hits(ctx, cfg, q)
   } catch {}
 
-  const json = await apiFetch(ctx, cfg, 'ai/proxy/chat/', {
+  // 修订草稿可能比写作更慢：强制走 job 模式，避免桌面端长连接被 180s 掐断导致“后端完成但前端无返回”
+  const json = await apiFetchChatWithJob(ctx, cfg, {
     mode: 'novel',
     action: 'revise',
     upstream: {
@@ -9901,7 +9902,7 @@ async function callNovelRevise(ctx, cfg, baseText, instruction, localConstraints
       constraints: constraints || undefined,
       rag: rag || undefined
     }
-  })
+  }, { timeoutMs: 240000 })
 
   const ctxMeta = (() => {
     try {

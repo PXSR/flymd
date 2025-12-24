@@ -44,6 +44,8 @@ const _codeCopyWraps = new Map<HTMLElement, HTMLDivElement>()
 let _codeCopyRaf: number | null = null
 let _codeCopyHost: HTMLElement | null = null
 let _codeCopyScrollHandler: (() => void) | null = null
+let _codeCopyRoot: HTMLElement | null = null
+let _codeCopyRootScrollCaptureHandler: (() => void) | null = null
 let _codeCopyResizeObserver: ResizeObserver | null = null
 let _codeCopyWindowResizeHandler: (() => void) | null = null
 let _inlineCodeMouseTimer: number | null = null
@@ -445,6 +447,8 @@ export async function enableWysiwygV2(root: HTMLElement, initialMd: string, onCh
   } catch {}
   _suppressInitialUpdate = false
   _editor = editor
+  // 初次内容渲染完成后再刷一次代码块按钮覆盖层，避免“打开文件按钮不出现直到首次编辑”
+  try { setTimeout(() => { try { scheduleCodeCopyRefresh() } catch {} }, 0) } catch {}
 }
 
 export async function disableWysiwygV2() {
@@ -802,6 +806,8 @@ function setupBracketPairingForWysiwyg(pm: HTMLElement | null) {
       }
       _rootMouseDownHandler = (ev: MouseEvent) => {
         try {
+          // 只处理左键，避免影响右键菜单等交互
+          if ((ev as any).button != null && (ev as any).button !== 0) return
           const tgt = ev.target as HTMLElement | null
           // ProseMirror 内部点击完全交给编辑器自身处理
           if (tgt && tgt.closest('.ProseMirror')) return
@@ -814,13 +820,16 @@ function setupBracketPairingForWysiwyg(pm: HTMLElement | null) {
             if (sv && tgt === sv && isMouseDownOnScrollbar(ev, sv)) return
             if (root && tgt === root && isMouseDownOnScrollbar(ev, root)) return
           }
+          // 这段逻辑只想覆盖“内容较少/不滚动”的场景：可滚动时绝对不要动滚动位置
+          const scrollBox = sv || root
+          if (scrollBox && scrollBox.scrollHeight > scrollBox.clientHeight + 1) return
           const view = _getView()
           if (!view) return
           const state = view.state
           const doc = state.doc
           const safePos = doc.content.size >>> 0
           const tr = state.tr.setSelection(TextSelection.create(doc, safePos))
-          view.dispatch(tr.scrollIntoView())
+          view.dispatch(tr)
           try { view.focus() } catch {}
           ev.preventDefault()
           try { ev.stopPropagation() } catch {}
@@ -1097,8 +1106,16 @@ function cleanupCodeCopyOverlay() {
   try {
     if (_codeCopyHost && _codeCopyScrollHandler) { _codeCopyHost.removeEventListener('scroll', _codeCopyScrollHandler) }
   } catch {}
+  try {
+    if (_codeCopyRoot && _codeCopyRootScrollCaptureHandler) {
+      try { _codeCopyRoot.removeEventListener('scroll', _codeCopyRootScrollCaptureHandler, true) } catch {}
+      try { _codeCopyRoot.removeEventListener('scroll', _codeCopyRootScrollCaptureHandler as any) } catch {}
+    }
+  } catch {}
   _codeCopyScrollHandler = null
   _codeCopyHost = null
+  _codeCopyRootScrollCaptureHandler = null
+  _codeCopyRoot = null
   try {
     if (_codeCopyResizeObserver) { _codeCopyResizeObserver.disconnect(); _codeCopyResizeObserver = null }
   } catch {}
@@ -1132,12 +1149,25 @@ function setupCodeCopyOverlay(host: HTMLElement | null) {
   _codeCopyHost = scrollHost
   const onScroll = () => { scheduleCodeCopyRefresh() }
   _codeCopyScrollHandler = onScroll
-  // 绑定到 scrollHost，滚动事件会自然冒泡
+  // 绑定到 scrollHost
   try {
     scrollHost.addEventListener('scroll', onScroll, { passive: true })
   } catch {
     try { scrollHost.addEventListener('scroll', onScroll) } catch {}
   }
+  // scroll 事件不冒泡：额外在 root 上用 capture 捕获后代滚动（否则覆盖层会“钉死在顶部”）
+  try {
+    const root = _root as HTMLElement | null
+    if (root) {
+      _codeCopyRoot = root
+      _codeCopyRootScrollCaptureHandler = onScroll
+      try {
+        root.addEventListener('scroll', onScroll, { passive: true, capture: true } as any)
+      } catch {
+        try { root.addEventListener('scroll', onScroll, true) } catch {}
+      }
+    }
+  } catch {}
   if (typeof ResizeObserver !== 'undefined') {
     try {
       _codeCopyResizeObserver = new ResizeObserver(() => { scheduleCodeCopyRefresh() })
@@ -1147,7 +1177,9 @@ function setupCodeCopyOverlay(host: HTMLElement | null) {
   const onResize = () => { scheduleCodeCopyRefresh() }
   _codeCopyWindowResizeHandler = onResize
   window.addEventListener('resize', onResize)
+  // 初次挂载时 ProseMirror 的 DOM 可能还没把 <pre> 真正插进来：多刷一帧避免“打开文件看不到按钮”
   scheduleCodeCopyRefresh()
+  try { requestAnimationFrame(() => { try { scheduleCodeCopyRefresh() } catch {} }) } catch {}
 }
 
 function getCodeCopyText(pre: HTMLElement): string | null {

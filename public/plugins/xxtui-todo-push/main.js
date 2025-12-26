@@ -162,7 +162,28 @@ function ensureXxtuiCss() {
             '.xt-help-text strong{font-weight:600;color:#0f172a;}',
             '#xtui-set-actions{display:flex;gap:10px;justify-content:flex-end;padding:10px 12px;border-top:1px solid #e5e7eb;background:#fafafa;}',
             '#xtui-set-actions button{padding:6px 12px;border-radius:8px;border:1px solid #e5e7eb;background:#ffffff;color:#0f172a;font-size:13px;cursor:pointer;}',
-            '#xtui-set-actions button.primary{background:#2563eb;border-color:#2563eb;color:#fff;}'
+            '#xtui-set-actions button.primary{background:#2563eb;border-color:#2563eb;color:#fff;}',
+            // 新增样式类
+            '.xt-row-center{display:flex;align-items:center;gap:12px;margin:8px 0;}',
+            '.xt-row-center-top{display:flex;align-items:center;gap:12px;margin:8px 0;padding-top:6px;}',
+            '.xt-input-fixed{width:160px;}',
+            '.xt-label-fixed{width:90px;color:#334155;font-size:13px;}',
+            // 移动端适配
+            '@media (max-width:600px){',
+            '  #xtui-set-dialog{width:100vw;height:100vh;max-width:100vw;max-height:100vh;border-radius:0;}',
+            '  #xtui-set-body{flex-direction:column;}',
+            '  #xtui-set-nav{width:100%;flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid #e5e7eb;padding:6px;gap:4px;}',
+            '  .xtui-nav-btn{white-space:nowrap;padding:6px 10px;font-size:12px;}',
+            '  #xtui-set-panel{padding:10px;}',
+            '  .xt-row{flex-direction:column;align-items:stretch;gap:6px;}',
+            '  .xt-row label{width:auto;}',
+            '  .xt-row-center,.xt-row-center-top{flex-direction:column;align-items:stretch;gap:6px;}',
+            '  .xt-input-fixed{width:100% !important;}',
+            '  .xt-label-fixed{width:auto;margin-bottom:4px;}',
+            '  .xt-row label[style*="display:flex"]{flex-direction:row;align-items:center !important;}',
+            '  .xt-key-item{grid-template-columns:1fr;gap:6px;}',
+            '  .xt-key-item .xt-radio{justify-content:space-between;}',
+            '}'
         ].join('')
         doc.head.appendChild(css)
     } catch {
@@ -2153,8 +2174,8 @@ export async function openSettings(context) {
             '       </div>',
             '     </div>',
             '     <div class="xtui-tab" data-tab="plugin">',
-            '       <div class="xt-row" style="align-items:center;gap:12px;">',
-            '         <label style="width:90px;color:#334155;font-size:13px;">' +
+            '       <div class="xt-row xt-row-center">',
+            '         <label class="xt-label-fixed">' +
                 xxtText('是否回写标记', 'Write back flags') +
                 '</label>',
             '         <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#111827;white-space:nowrap;">',
@@ -2164,20 +2185,20 @@ export async function openSettings(context) {
                 '</span>',
             '         </label>',
             '       </div>',
-            '       <div class="xt-row" style="align-items:center;gap:12px;">',
-            '         <label style="width:90px;color:#334155;font-size:13px;">' +
+            '       <div class="xt-row xt-row-center">',
+            '         <label class="xt-label-fixed">' +
                 xxtText('推送标记', 'Push flag') +
                 '</label>',
-            '         <input id="xtui-flag-push" type="text" style="width:160px;" placeholder="[pushed]" />',
+            '         <input id="xtui-flag-push" type="text" class="xt-input-fixed" placeholder="[pushed]" />',
             '       </div>',
-            '       <div class="xt-row" style="align-items:center;gap:12px;">',
-            '         <label style="width:90px;color:#334155;font-size:13px;">' +
+            '       <div class="xt-row xt-row-center">',
+            '         <label class="xt-label-fixed">' +
                 xxtText('创建提醒标记', 'Reminder flag') +
                 '</label>',
-            '         <input id="xtui-flag-remind" type="text" style="width:160px;" placeholder="[reminded]" />',
+            '         <input id="xtui-flag-remind" type="text" class="xt-input-fixed" placeholder="[reminded]" />',
             '       </div>',
-            '       <div class="xt-row" style="align-items:center;gap:12px;padding-top:6px;">',
-            '         <label style="width:90px;color:#334155;font-size:13px;">' +
+            '       <div class="xt-row xt-row-center-top">',
+            '         <label class="xt-label-fixed">' +
                 xxtText('提示设置', 'Prompt settings') +
                 '</label>',
             '         <button class="xt-small-btn" id="xtui-reset-prompt-status">' +

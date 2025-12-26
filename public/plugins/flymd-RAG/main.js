@@ -2498,6 +2498,26 @@ function ensureDialogStyle() {
   font-size:12px;
   white-space:pre-wrap;
 }
+/* 移动端适配 */
+@media (max-width:600px){
+  .flysmart-dialog{
+    width:100vw;
+    height:100vh;
+    max-width:100vw;
+    max-height:100vh;
+    border-radius:0;
+  }
+  .flysmart-header{ padding:8px 10px; }
+  .flysmart-body{ padding:10px; }
+  .flysmart-row{ margin:8px 0; }
+  .flysmart-grid{ grid-template-columns:1fr; gap:8px; }
+  .flysmart-input,.flysmart-textarea,.flysmart-select{ font-size:16px; }
+  .flysmart-btn{ padding:8px 12px; font-size:14px; min-height:44px; }
+  .flysmart-item{ padding:12px; }
+  .flysmart-item .t{ font-size:15px; margin-bottom:6px; }
+  .flysmart-item .s{ font-size:13px; }
+  .flysmart-tip{ font-size:13px; }
+}
   `
   document.head.appendChild(style)
 }

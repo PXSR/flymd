@@ -2630,6 +2630,275 @@ async function writeTextAny(ctx, path, content) {
   throw new Error(t('当前环境不支持写文件', 'File write is not supported in this environment'))
 }
 
+function ain_backup_rel_prefix() {
+  return '.flymd/ainovel-backups'
+}
+
+function ain_backup_rel_in_snapshot_from_ainovel(relPath) {
+  // WebDAV 同步默认不进入隐藏目录；备份快照内部禁止出现 `.ainovel/` 这种隐藏目录名
+  const r = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '')
+  if (r.startsWith('.ainovel/')) return 'ainovel/' + r.slice('.ainovel/'.length)
+  if (r === '.ainovel') return 'ainovel'
+  return r
+}
+
+async function ain_register_webdav_backup_prefix(ctx) {
+  try {
+    const api = ctx && typeof ctx.getWebdavAPI === 'function' ? ctx.getWebdavAPI() : null
+    if (!api || typeof api.registerExtraPaths !== 'function') {
+      return { ok: false, msg: t('宿主未提供 WebDAV 插件 API（无法注册额外同步目录）', 'Host WebDAV plugin API is not available') }
+    }
+    await api.registerExtraPaths({
+      owner: 'ai-novel',
+      paths: [{ type: 'prefix', path: ain_backup_rel_prefix() }]
+    })
+    return { ok: true, msg: t('已注册 WebDAV 额外同步目录：', 'Registered WebDAV extra sync prefix: ') + ain_backup_rel_prefix() }
+  } catch (e) {
+    return { ok: false, msg: t('注册 WebDAV 额外同步目录失败：', 'Failed to register WebDAV extra sync prefix: ') + (e && e.message ? e.message : String(e)) }
+  }
+}
+
+async function ain_backup_project_key(projectRel) {
+  const rel = String(projectRel || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!rel) return ''
+  return await sha256Hex('ainovel:backup:' + rel)
+}
+
+async function ain_backup_get_paths(ctx, cfg, inf) {
+  const projectRel = inf && inf.projectRel ? String(inf.projectRel) : ''
+  const projectAbs = inf && inf.projectAbs ? String(inf.projectAbs) : ''
+  const libRoot = inf && inf.libRoot ? String(inf.libRoot) : ''
+  if (!projectRel || !projectAbs || !libRoot) {
+    throw new Error(t('无法确定当前项目路径：请先选择当前项目', 'Cannot resolve current project; please select a project first'))
+  }
+  const projKey = await ain_backup_project_key(projectRel)
+  if (!projKey) throw new Error(t('无法生成备份 Key', 'Failed to generate backup key'))
+
+  const backupRootAbs = joinFsPath(libRoot, ain_backup_rel_prefix())
+  const projectBackupRootAbs = joinFsPath(backupRootAbs, projKey)
+  const latestPath = joinFsPath(projectBackupRootAbs, 'latest.json')
+
+  const ragPaths = await rag_get_index_paths(ctx, cfg, projectAbs)
+  return {
+    projectRel,
+    projectAbs,
+    libRoot,
+    projKey,
+    backupRootAbs,
+    projectBackupRootAbs,
+    latestPath,
+    ragPaths,
+  }
+}
+
+async function ain_compute_app_local_rag_paths(ctx, projectAbs) {
+  // 不依赖 cfg：只要宿主提供 plugin data dir，就能算出 AppLocalData 的 RAG 位置
+  const projectAbsNorm = normFsPath(projectAbs)
+  if (!ctx || typeof ctx.getPluginDataDir !== 'function') return null
+  try {
+    const base = normFsPath(await ctx.getPluginDataDir())
+    if (!base) return null
+    const key = await sha256Hex('ainovel:rag:' + projectAbsNorm)
+    const dir = joinFsPath(base, 'ai-novel/rag/' + key)
+    return {
+      dir,
+      metaPath: joinFsPath(dir, 'rag_meta.json'),
+      vecPath: joinFsPath(dir, 'rag_vectors.f32'),
+    }
+  } catch {
+    return null
+  }
+}
+
+async function ain_try_read_text(ctx, absPath) {
+  try {
+    const v = await readTextAny(ctx, absPath)
+    const s = v == null ? '' : String(v)
+    return { ok: true, text: s }
+  } catch (e) {
+    return { ok: false, err: e }
+  }
+}
+
+async function ain_try_read_binary(ctx, absPath) {
+  try {
+    const bytes = await readFileBinaryAny(ctx, absPath)
+    return { ok: true, bytes }
+  } catch (e) {
+    return { ok: false, err: e }
+  }
+}
+
+async function ain_backup_write_snapshot(ctx, cfg, inf) {
+  const p = await ain_backup_get_paths(ctx, cfg, inf)
+
+  const snapId = safeFileName(_fmtLocalTs(), 'ts')
+  const snapDirAbs = joinFsPath(p.projectBackupRootAbs, snapId)
+  const snapshotMetaAbs = joinFsPath(snapDirAbs, 'snapshot.json')
+
+  // 先写 snapshot.json，确保目录创建成功（write_text_file_any 会 create_dir_all）
+  const snapshot = {
+    version: 1,
+    created_at: Date.now(),
+    projectRel: p.projectRel,
+    projectName: inf && inf.projectName ? String(inf.projectName) : '',
+    rag: {
+      mode: p.ragPaths && p.ragPaths.mode ? String(p.ragPaths.mode) : 'project',
+      note: '本快照只用于手动备份/恢复索引；不要把项目 .ainovel 目录直接加入常规同步。',
+    },
+    files: [],
+  }
+  await writeTextAny(ctx, snapshotMetaAbs, JSON.stringify(snapshot, null, 2))
+
+  const added = []
+
+  async function addTextFile(srcAbs, relInSnap) {
+    const r = await ain_try_read_text(ctx, srcAbs)
+    if (!r.ok) return
+    const dstAbs = joinFsPath(snapDirAbs, relInSnap)
+    await writeTextAny(ctx, dstAbs, r.text)
+    added.push({ rel: relInSnap, kind: 'text', bytes: (r.text || '').length })
+  }
+
+  async function addBinaryFile(srcAbs, relInSnap) {
+    const r = await ain_try_read_binary(ctx, srcAbs)
+    if (!r.ok) return
+    const dstAbs = joinFsPath(snapDirAbs, relInSnap)
+    // 先确保父目录存在：write_text_file_any 会 create_dir_all；再用二进制覆盖写入
+    try { await writeTextAny(ctx, dstAbs, '') } catch {}
+    await writeFileBinaryAny(ctx, dstAbs, r.bytes)
+    added.push({ rel: relInSnap, kind: 'binary', bytes: r.bytes ? (r.bytes.length | 0) : 0 })
+  }
+
+  // 项目内 .ainovel（体积很小，建议一并备份，恢复更完整）
+  await addTextFile(joinFsPath(p.projectAbs, '.ainovel/index.json'), 'project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/index.json'))
+  await addTextFile(joinFsPath(p.projectAbs, '.ainovel/meta.json'), 'project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/meta.json'))
+
+  // 项目内 RAG（默认模式）
+  await addTextFile(joinFsPath(p.projectAbs, AIN_RAG_META_FILE), 'project/' + ain_backup_rel_in_snapshot_from_ainovel(AIN_RAG_META_FILE))
+  await addBinaryFile(joinFsPath(p.projectAbs, AIN_RAG_VEC_FILE), 'project/' + ain_backup_rel_in_snapshot_from_ainovel(AIN_RAG_VEC_FILE))
+  await addTextFile(joinFsPath(p.projectAbs, '.ainovel/rag_index.json'), 'project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/rag_index.json'))
+
+  // AppLocalData RAG（如果启用 indexInAppLocalData，则这才是“正在使用”的索引）
+  try {
+    const app = await ain_compute_app_local_rag_paths(ctx, p.projectAbs)
+    if (app && app.metaPath && app.vecPath) {
+      await addTextFile(app.metaPath, 'appLocalData/rag_meta.json')
+      await addBinaryFile(app.vecPath, 'appLocalData/rag_vectors.f32')
+    }
+  } catch {}
+
+  // 回写 snapshot.json 的 files 列表
+  try {
+    snapshot.files = added
+    await writeTextAny(ctx, snapshotMetaAbs, JSON.stringify(snapshot, null, 2))
+  } catch {}
+
+  // 更新 latest 指针：用于新设备“无需列目录即可恢复”
+  await writeTextAny(ctx, p.latestPath, JSON.stringify({ version: 1, snapId, created_at: snapshot.created_at }, null, 2))
+
+  return {
+    snapId,
+    snapDirAbs,
+    latestPath: p.latestPath,
+    totalFiles: added.length,
+  }
+}
+
+async function ain_backup_load_latest(ctx, cfg, inf) {
+  const p = await ain_backup_get_paths(ctx, cfg, inf)
+  let raw = ''
+  try {
+    raw = safeText(await readTextAny(ctx, p.latestPath))
+  } catch {
+    throw new Error(t('未找到 latest.json：请先在任一设备创建备份，并确保 WebDAV 同步完成', 'latest.json not found; create a backup on any device and run WebDAV sync'))
+  }
+  const json = JSON.parse(raw || '{}')
+  const snapId = json && json.snapId ? String(json.snapId) : ''
+  if (!snapId) throw new Error(t('未找到 latest.json：请先在任一设备创建备份，并确保 WebDAV 同步完成', 'latest.json not found; create a backup on any device and run WebDAV sync'))
+  const snapDirAbs = joinFsPath(p.projectBackupRootAbs, safeFileName(snapId, 'snap'))
+  const snapshotMetaAbs = joinFsPath(snapDirAbs, 'snapshot.json')
+  return { ...p, snapId, snapDirAbs, snapshotMetaAbs }
+}
+
+async function ain_backup_restore_from_snapshot(ctx, cfg, inf, snapIdOpt) {
+  const p = await ain_backup_get_paths(ctx, cfg, inf)
+  let snapId = safeFileName(String(snapIdOpt || '').trim(), 'snap')
+  if (!snapId) {
+    const latest = await ain_backup_load_latest(ctx, cfg, inf)
+    snapId = latest.snapId
+  }
+  const snapDirAbs = joinFsPath(p.projectBackupRootAbs, snapId)
+
+  // 目标路径
+  const projectIndexAbs = joinFsPath(p.projectAbs, '.ainovel/index.json')
+  const projectMetaAbs = joinFsPath(p.projectAbs, '.ainovel/meta.json')
+
+  const projectRagMetaAbs = joinFsPath(p.projectAbs, AIN_RAG_META_FILE)
+  const projectRagVecAbs = joinFsPath(p.projectAbs, AIN_RAG_VEC_FILE)
+  const projectRagLegacyAbs = joinFsPath(p.projectAbs, '.ainovel/rag_index.json')
+
+  // AppLocalData 的目标路径（按“当前设备的 projectAbs”计算，不依赖旧设备绝对路径）
+  let appRagMetaAbs = ''
+  let appRagVecAbs = ''
+  try {
+    const app = await ain_compute_app_local_rag_paths(ctx, p.projectAbs)
+    if (app && app.metaPath && app.vecPath) {
+      appRagMetaAbs = app.metaPath
+      appRagVecAbs = app.vecPath
+    }
+  } catch {}
+
+  async function restoreText(relInSnap, dstAbs) {
+    const srcAbs = joinFsPath(snapDirAbs, relInSnap)
+    const r = await ain_try_read_text(ctx, srcAbs)
+    if (!r.ok) return false
+    await writeTextAny(ctx, dstAbs, r.text)
+    return true
+  }
+
+  async function restoreBinary(relInSnap, dstAbs) {
+    const srcAbs = joinFsPath(snapDirAbs, relInSnap)
+    const r = await ain_try_read_binary(ctx, srcAbs)
+    if (!r.ok) return false
+    // 先用文本写空文件创建父目录，再用二进制覆盖（避免遗留 .keep 垃圾文件）
+    try { await writeTextAny(ctx, dstAbs, '') } catch {}
+    await writeFileBinaryAny(ctx, dstAbs, r.bytes)
+    return true
+  }
+
+  // 先恢复项目标记/元数据：用 writeTextAny 确保 .ainovel 目录存在
+  const okIndex = await restoreText('project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/index.json'), projectIndexAbs)
+  const okMeta = await restoreText('project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/meta.json'), projectMetaAbs)
+
+  // 恢复 RAG：先 meta 再 vectors，避免出现“有 vec 无 meta”的半残状态
+  const okProjectRagMeta = await restoreText('project/' + ain_backup_rel_in_snapshot_from_ainovel(AIN_RAG_META_FILE), projectRagMetaAbs)
+  const okProjectRagVec = await restoreBinary('project/' + ain_backup_rel_in_snapshot_from_ainovel(AIN_RAG_VEC_FILE), projectRagVecAbs)
+  const okLegacy = await restoreText('project/' + ain_backup_rel_in_snapshot_from_ainovel('.ainovel/rag_index.json'), projectRagLegacyAbs)
+
+  // 如果快照里带了 AppLocalData 的索引，并且当前设备支持 pluginDataDir，则一并恢复到 AppLocalData
+  let okAppRag = false
+  try {
+    if (appRagMetaAbs && appRagVecAbs) {
+      const okAppMeta = await restoreText('appLocalData/rag_meta.json', appRagMetaAbs)
+      const okAppVec = await restoreBinary('appLocalData/rag_vectors.f32', appRagVecAbs)
+      okAppRag = okAppMeta || okAppVec
+    }
+  } catch {}
+
+  return {
+    snapId,
+    restored: {
+      projectIndex: okIndex,
+      projectMeta: okMeta,
+      projectRagMeta: okProjectRagMeta,
+      projectRagVec: okProjectRagVec,
+      legacyRagJson: okLegacy,
+      appLocalDataRag: okAppRag,
+    }
+  }
+}
+
 async function backupBeforeOverwrite(ctx, absPath, tag) {
   try {
     if (!ctx) return ''
@@ -3546,6 +3815,179 @@ async function openSettingsDialog(ctx) {
   )
   secEmb.appendChild(ragIdxHint)
 
+  // 索引备份/恢复（快照式）：把 .ainovel（以及可能的 AppLocalData RAG）拷贝到 .flymd/ainovel-backups 并通过 WebDAV 额外前缀同步
+  const secIdxBk = document.createElement('div')
+  secIdxBk.className = 'ain-card'
+  const idxBkTitle = document.createElement('div')
+  idxBkTitle.style.fontWeight = '700'
+  idxBkTitle.style.marginBottom = '6px'
+  idxBkTitle.textContent = t('索引备份 / 恢复（WebDAV 快照）', 'Index backup/restore (WebDAV snapshot)')
+  secIdxBk.appendChild(idxBkTitle)
+
+  const idxBkHint = document.createElement('div')
+  idxBkHint.className = 'ain-muted'
+  idxBkHint.textContent = t(
+    '说明：不会把项目目录的 .ainovel 直接加入常规同步（风险大）；这里只做“快照备份”。备份文件放在库根目录 .flymd/ainovel-backups/，可通过 WebDAV 额外同步前缀同步到多端。',
+    'Note: we do NOT sync project .ainovel directly (too risky). This is snapshot backup only. Backups live under library root .flymd/ainovel-backups/ and can be synced via WebDAV extra sync prefix.'
+  )
+  secIdxBk.appendChild(idxBkHint)
+
+  const idxBkOut = document.createElement('div')
+  idxBkOut.className = 'ain-out'
+  idxBkOut.style.marginTop = '8px'
+  idxBkOut.textContent = t('状态：未加载', 'Status: not loaded')
+  secIdxBk.appendChild(idxBkOut)
+
+  async function refreshIdxBackupStatus() {
+    try {
+      cfg = await loadCfg(ctx)
+      const inf = await inferProjectDir(ctx, cfg)
+      if (!inf) {
+        idxBkOut.textContent = t('状态：未选择当前项目（请先在“小说→选择当前项目”里选择）', 'Status: no current project selected')
+        return
+      }
+      const p = await ain_backup_get_paths(ctx, cfg, inf)
+      let latest = ''
+      try {
+        const raw = safeText(await readTextAny(ctx, p.latestPath))
+        const j = JSON.parse(raw || '{}')
+        latest = j && j.snapId ? String(j.snapId) : ''
+      } catch {}
+      idxBkOut.textContent =
+        t('当前项目：', 'Project: ') + inf.projectRel +
+        '\n' + t('备份目录：', 'Backup dir: ') + joinFsPath(inf.libRoot, ain_backup_rel_prefix()) +
+        '\n' + t('latest：', 'latest: ') + (latest || t('无（尚未创建备份）', 'none (no backup yet)')) +
+        '\n' + t('提示：创建备份后，请到宿主 WebDAV 同步面板点一次“同步现在”（或等待自动同步）把备份上传到远端。', 'Tip: after creating a backup, run WebDAV sync in host to upload it.')
+    } catch (e) {
+      idxBkOut.textContent = t('状态：读取失败：', 'Status: failed: ') + (e && e.message ? e.message : String(e))
+    }
+  }
+
+  const rowIdxBk = mkBtnRow()
+
+  const btnIdxBkSync = document.createElement('button')
+  btnIdxBkSync.className = 'ain-btn gray'
+  btnIdxBkSync.textContent = t('同步备份目录（注册到 WebDAV）', 'Sync backup dir (register WebDAV)')
+  btnIdxBkSync.onclick = async () => {
+    try {
+      setBusy(btnIdxBkSync, true)
+      const res = await ain_register_webdav_backup_prefix(ctx)
+      idxBkOut.textContent = (res && res.msg) ? String(res.msg) : t('未知结果', 'Unknown result')
+      ctx.ui.notice(idxBkOut.textContent, res && res.ok ? 'ok' : 'warn', 2200)
+    } catch (e) {
+      const msg = t('失败：', 'Failed: ') + (e && e.message ? e.message : String(e))
+      idxBkOut.textContent = msg
+      ctx.ui.notice(msg, 'err', 2600)
+    } finally {
+      setBusy(btnIdxBkSync, false)
+      try { await refreshIdxBackupStatus() } catch {}
+    }
+  }
+  rowIdxBk.appendChild(btnIdxBkSync)
+
+  const btnIdxBkMake = document.createElement('button')
+  btnIdxBkMake.className = 'ain-btn'
+  btnIdxBkMake.textContent = t('创建索引快照备份', 'Create snapshot')
+  btnIdxBkMake.onclick = async () => {
+    try {
+      setBusy(btnIdxBkMake, true)
+      cfg = await loadCfg(ctx)
+      const inf = await inferProjectDir(ctx, cfg)
+      if (!inf) throw new Error(t('未选择当前项目', 'No project selected'))
+
+      // 顺手注册一次 WebDAV 额外同步前缀（失败不影响备份落盘）
+      let regMsg = ''
+      try {
+        const rr = await ain_register_webdav_backup_prefix(ctx)
+        if (rr && rr.msg) regMsg = String(rr.msg)
+      } catch {}
+
+      idxBkOut.textContent = t('创建备份中…', 'Creating backup...')
+      const r = await ain_backup_write_snapshot(ctx, cfg, inf)
+      idxBkOut.textContent =
+        (regMsg ? (regMsg + '\n\n') : '') +
+        t('已创建快照：', 'Snapshot created: ') + r.snapId +
+        '\n' + t('文件数：', 'Files: ') + String(r.totalFiles) +
+        '\n' + t('位置：', 'Path: ') + r.snapDirAbs +
+        '\n' + t('下一步：到宿主 WebDAV 同步面板点一次“同步现在”上传到远端。', 'Next: run WebDAV sync in host to upload.')
+      ctx.ui.notice(t('已创建索引备份快照', 'Snapshot created'), 'ok', 1800)
+    } catch (e) {
+      const msg = t('创建备份失败：', 'Create backup failed: ') + (e && e.message ? e.message : String(e))
+      idxBkOut.textContent = msg
+      ctx.ui.notice(msg, 'err', 2600)
+    } finally {
+      setBusy(btnIdxBkMake, false)
+      try { await refreshIdxBackupStatus() } catch {}
+    }
+  }
+  rowIdxBk.appendChild(btnIdxBkMake)
+
+  const btnIdxBkRestore = document.createElement('button')
+  btnIdxBkRestore.className = 'ain-btn red'
+  btnIdxBkRestore.textContent = t('从备份恢复（最新）', 'Restore (latest)')
+  btnIdxBkRestore.onclick = async () => {
+    try {
+      setBusy(btnIdxBkRestore, true)
+      cfg = await loadCfg(ctx)
+      const inf = await inferProjectDir(ctx, cfg)
+      if (!inf) throw new Error(t('未选择当前项目', 'No project selected'))
+
+      const latest = await ain_backup_load_latest(ctx, cfg, inf)
+      const snapId = latest.snapId
+
+      const msg1 = [
+        t('将从以下快照恢复索引：', 'Restore from snapshot: '),
+        snapId,
+        '',
+        t('警告：此操作将覆盖本机索引文件（不可逆）。建议先在当前设备再创建一次快照作为保险。', 'WARNING: this will overwrite local index files (irreversible). Create a snapshot first as safety.'),
+        '',
+        t('将覆盖（如存在于快照中）：', 'Will overwrite (if present in snapshot): '),
+        '- ' + '.ainovel/index.json',
+        '- ' + '.ainovel/meta.json',
+        '- ' + AIN_RAG_META_FILE,
+        '- ' + AIN_RAG_VEC_FILE,
+        '- ' + '.ainovel/rag_index.json',
+        '',
+        t('继续？', 'Continue?')
+      ].join('\n')
+      const ok1 = await openConfirmDialog(ctx, {
+        title: t('恢复索引（第 1 次确认）', 'Restore index (confirm 1/2)'),
+        message: msg1
+      })
+      if (!ok1) return
+
+      const typed = await openAskTextDialog(ctx, {
+        title: t('恢复索引（第 2 次确认）', 'Restore index (confirm 2/2)'),
+        label: t('请输入“覆盖”以继续：', 'Type "OVERWRITE" to continue:'),
+        placeholder: t('输入 覆盖', 'Type OVERWRITE'),
+        initial: '',
+        allowEmpty: false
+      })
+      const typed2 = String(typed || '').trim()
+      if (typed2 !== '覆盖' && typed2.toUpperCase() !== 'OVERWRITE') {
+        ctx.ui.notice(t('已取消：二次确认未通过', 'Cancelled: confirmation not matched'), 'warn', 2200)
+        return
+      }
+
+      idxBkOut.textContent = t('恢复中…', 'Restoring...')
+      const r = await ain_backup_restore_from_snapshot(ctx, cfg, inf, snapId)
+      idxBkOut.textContent =
+        t('已恢复：', 'Restored: ') + r.snapId +
+        '\n' + t('结果：', 'Result: ') + JSON.stringify(r.restored)
+      ctx.ui.notice(t('索引已恢复（建议重启应用后再使用 RAG）', 'Index restored (restart recommended)'), 'ok', 2400)
+    } catch (e) {
+      const msg = t('恢复失败：', 'Restore failed: ') + (e && e.message ? e.message : String(e))
+      idxBkOut.textContent = msg
+      ctx.ui.notice(msg, 'err', 2800)
+    } finally {
+      setBusy(btnIdxBkRestore, false)
+      try { await refreshIdxBackupStatus() } catch {}
+    }
+  }
+  rowIdxBk.appendChild(btnIdxBkRestore)
+
+  secIdxBk.appendChild(rowIdxBk)
+
   const secSave = document.createElement('div')
   secSave.className = 'ain-card'
   const btnSave = document.createElement('button')
@@ -3607,6 +4049,7 @@ async function openSettingsDialog(ctx) {
   body.appendChild(secCtx)
   body.appendChild(secAgent)
   body.appendChild(secEmb)
+  body.appendChild(secIdxBk)
   body.appendChild(secSave)
 
   dlg.appendChild(head)
@@ -3617,6 +4060,8 @@ async function openSettingsDialog(ctx) {
 
   // 初次打开尝试刷新一次
   try { await refreshBilling() } catch {}
+  // 同时刷新一次备份状态
+  try { await refreshIdxBackupStatus() } catch {}
 }
 
 async function openUsageLogsDialog(ctx) {

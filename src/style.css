@@ -1460,7 +1460,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .library .lib-dir { cursor: pointer; }
 .library .lib-file { cursor: pointer; }
 .library .lib-toggle { width: 12px; text-align: center; color: var(--muted); }
-.library .lib-children { margin-left: 14px; }
+.library .lib-children { margin-left: 8px; padding-left: 2px; }
 
 /* 库侧栏图标：VS Code 风格 SVG 黑白图标 */
 .lib-ico { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; flex: 0 0 auto; }
@@ -3250,7 +3250,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .library .lib-dir .lib-name { font-weight: 450; }
 
 /* 树形缩进 */
-.library .lib-children { margin-left: 16px; padding-left: 6px; }
+.library .lib-children { margin-left: 8px; padding-left: 2px; }
 
 /* 不按扩展名上色：保持一致性 */
 

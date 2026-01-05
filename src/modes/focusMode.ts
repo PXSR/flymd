@@ -130,10 +130,17 @@ export async function applyWindowDecorationsCore(
     const win = getCurrentWindow()
     const hideNative = focusMode || compactTitlebar
     await win.setDecorations(!hideNative)
+
+    // macOS：无边框窗口（decorations: false）下，窗口可能被系统视为“不可最小化”，导致 minimize() 无效。
+    // 只在 macOS 且隐藏原生装饰时强制启用，避免影响其它平台与正常模式。
+    const platform = (navigator.platform || '').toLowerCase()
+    if (hideNative && platform.includes('mac')) {
+      try { await win.setMinimizable(true) } catch {}
+    }
+
     // 同步更新 body class，用于 CSS 判断是否显示自定义窗口控制按钮
     document.body.classList.toggle('no-native-decorations', hideNative)
   } catch (err) {
     console.warn('切换窗口装饰失败:', err)
   }
 }
-

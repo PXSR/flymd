@@ -6753,6 +6753,24 @@ body.focus-mode.custom-titlebar-active .focus-trigger-zone {
   opacity: 0.5;
 }
 
+/* 拖拽幽灵元素 */
+.tabbar-tab-ghost {
+  position: fixed;
+  z-index: 999999;
+  pointer-events: none;
+  opacity: 0.9;
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  background: var(--chrome-panel-bg, var(--panel-bg));
+}
+
+@media (prefers-color-scheme: dark) {
+  .tabbar-tab-ghost {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
 .tabbar-tab.drag-over-left::before,
 .tabbar-tab.drag-over-right::after {
   content: '';

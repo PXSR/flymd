@@ -185,6 +185,9 @@ export class TabBar {
           isDragging: boolean
           targetEl: HTMLElement | null
           insertAfter: boolean
+          ghostEl: HTMLElement | null
+          offsetX: number
+          offsetY: number
         }
       | null = null
 
@@ -229,6 +232,12 @@ export class TabBar {
       try {
         if (dragState) tabEl.releasePointerCapture(dragState.pointerId)
       } catch {}
+      // 销毁幽灵元素
+      try {
+        if (dragState?.ghostEl) {
+          dragState.ghostEl.remove()
+        }
+      } catch {}
       tabEl.classList.remove('dragging')
       clearDragIndicators()
       this.draggedTabId = null
@@ -249,6 +258,29 @@ export class TabBar {
         tabEl.classList.add('dragging')
         try { document.body.style.userSelect = 'none' } catch {}
         try { document.body.style.cursor = 'grabbing' } catch {}
+
+        // 创建幽灵元素
+        try {
+          const rect = tabEl.getBoundingClientRect()
+          const ghost = tabEl.cloneNode(true) as HTMLElement
+          ghost.classList.add('tabbar-tab-ghost')
+          ghost.classList.remove('dragging', 'active')
+          ghost.style.width = rect.width + 'px'
+          ghost.style.height = rect.height + 'px'
+          // 计算鼠标相对于标签的偏移
+          dragState.offsetX = dragState.startX - rect.left
+          dragState.offsetY = dragState.startY - rect.top
+          ghost.style.left = (e.clientX - dragState.offsetX) + 'px'
+          ghost.style.top = (e.clientY - dragState.offsetY) + 'px'
+          document.body.appendChild(ghost)
+          dragState.ghostEl = ghost
+        } catch {}
+      }
+
+      // 更新幽灵元素位置
+      if (dragState.ghostEl) {
+        dragState.ghostEl.style.left = (e.clientX - dragState.offsetX) + 'px'
+        dragState.ghostEl.style.top = (e.clientY - dragState.offsetY) + 'px'
       }
 
       // 指针捕获后，event.target 永远是 tabEl；必须用 elementFromPoint 找到“鼠标下的元素”。
@@ -349,6 +381,9 @@ export class TabBar {
         isDragging: false,
         targetEl: null,
         insertAfter: false,
+        ghostEl: null,
+        offsetX: 0,
+        offsetY: 0,
       }
       try { tabEl.setPointerCapture(e.pointerId) } catch {}
       tabEl.addEventListener('pointermove', handlePointerMove)

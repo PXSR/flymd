@@ -12,12 +12,37 @@
 
 export type DragGhostWindow = {
   label: string
+  setText: (text: string) => void
   setPosition: (screenX: number, screenY: number) => Promise<void>
+  show: () => Promise<void>
+  hide: () => Promise<void>
   destroy: () => Promise<void>
 }
 
-function genLabel(): string {
-  return 'drag-ghost-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+const LEGACY_LABEL_PREFIX = 'drag-ghost-'
+const LABEL_PREFIX = 'flymd-drag-ghost-'
+
+export async function cleanupDragGhostWindows(): Promise<void> {
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+    const wins = await WebviewWindow.getAll()
+    for (const w of wins) {
+      try {
+        const label = String((w as any)?.label || '')
+        // 只清理旧版本遗留的随机 label，避免误杀当前版本的可复用窗口
+        if (!label.startsWith(LEGACY_LABEL_PREFIX)) continue
+        await w.destroy()
+      } catch {}
+    }
+  } catch {
+    // 忽略
+  }
+}
+
+function stableLabel(ownerLabel: string): string {
+  // Webview label 的约束：`a-zA-Z-/:_`；ownerLabel 本身通常已满足，但这里仍做一次保险过滤
+  const safe = String(ownerLabel || 'main').replace(/[^a-zA-Z0-9\-/:_]/g, '_')
+  return LABEL_PREFIX + safe
 }
 
 export async function createDragGhostWindow(text: string): Promise<DragGhostWindow | null> {
@@ -25,53 +50,80 @@ export async function createDragGhostWindow(text: string): Promise<DragGhostWind
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
     const { LogicalPosition } = await import('@tauri-apps/api/window')
 
-    const label = genLabel()
-    const url = `drag-ghost.html?text=${encodeURIComponent(String(text || ''))}`
+    const ownerLabel = WebviewWindow.getCurrent()?.label || 'main'
+    const label = stableLabel(ownerLabel)
+    const url = `drag-ghost.html?owner=${encodeURIComponent(ownerLabel)}&text=${encodeURIComponent(String(text || ''))}`
 
-    const w = new WebviewWindow(label, {
-      url,
-      title: 'drag-ghost',
-      width: 240,
-      height: 36,
-      resizable: false,
-      decorations: false,
-      transparent: true,
-      shadow: false,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      focus: false,
-      focusable: false,
-    })
+    let w = await WebviewWindow.getByLabel(label)
+    if (!w) {
+      w = new WebviewWindow(label, {
+        url,
+        title: 'drag-ghost',
+        width: 240,
+        height: 36,
+        resizable: false,
+        decorations: false,
+        transparent: true,
+        shadow: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        visible: false,
+        focus: false,
+        focusable: false,
+      })
 
-    // 等待创建完成（避免后续 setPosition / setIgnoreCursorEvents 被吞）
-    await new Promise<void>((resolve) => {
-      let done = false
-      const finish = () => {
-        if (done) return
-        done = true
-        resolve()
+      // 等待创建完成；失败就当作不支持（避免后续对“无效句柄”反复 IPC 打爆）
+      const createdOk = await new Promise<boolean>((resolve) => {
+        let done = false
+        const finish = (ok: boolean) => {
+          if (done) return
+          done = true
+          resolve(ok)
+        }
+        try {
+          w!.once('tauri://created', () => finish(true))
+          w!.once('tauri://error', () => finish(false))
+          setTimeout(() => finish(false), 2000)
+        } catch {
+          finish(false)
+        }
+      })
+      if (!createdOk) {
+        try { await w.destroy() } catch {}
+        return null
       }
-      try {
-        w.once('tauri://created', () => finish())
-        w.once('tauri://error', () => finish())
-        setTimeout(() => finish(), 800)
-      } catch {
-        finish()
-      }
-    })
+    }
 
     // click-through：不挡住其它窗口的鼠标事件
     try { await w.setIgnoreCursorEvents(true) } catch {}
+    // 创建/复用时先确保隐藏，避免 dev/HMR 之后残留在屏幕上
+    try { await w.hide() } catch {}
+
+    const channelName = `flymd:drag-ghost:${ownerLabel}`
+    const bc =
+      (typeof (globalThis as any).BroadcastChannel === 'function')
+        ? new (globalThis as any).BroadcastChannel(channelName)
+        : null
 
     return {
       label,
+      setText(nextText: string) {
+        try { bc?.postMessage({ type: 'text', text: String(nextText || '') }) } catch {}
+      },
       async setPosition(screenX: number, screenY: number) {
         try {
           // 用逻辑坐标：与 PointerEvent.screenX/screenY 语义一致
           await w.setPosition(new LogicalPosition(Math.round(screenX), Math.round(screenY)))
         } catch {}
       },
+      async show() {
+        try { await w.show() } catch {}
+      },
+      async hide() {
+        try { await w.hide() } catch {}
+      },
       async destroy() {
+        try { bc?.close?.() } catch {}
         try { await w.destroy() } catch {}
       },
     }
@@ -79,4 +131,3 @@ export async function createDragGhostWindow(text: string): Promise<DragGhostWind
     return null
   }
 }
-

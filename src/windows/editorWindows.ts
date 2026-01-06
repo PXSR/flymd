@@ -118,3 +118,14 @@ export async function createEditorWebviewWindow(
     return null
   }
 }
+
+export async function destroyWebviewWindowByLabel(label: string): Promise<void> {
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+    const w = await WebviewWindow.getByLabel(label)
+    if (!w) return
+    try { await w.destroy() } catch {}
+  } catch {
+    // 忽略
+  }
+}

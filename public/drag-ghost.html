@@ -75,7 +75,29 @@
           if (el) el.textContent = t;
         } catch {}
       })();
+
+      (function () {
+        try {
+          const sp = new URLSearchParams(location.search);
+          const owner = sp.get('owner') || '';
+          const name = owner ? ('flymd:drag-ghost:' + owner) : 'flymd:drag-ghost';
+          if (typeof BroadcastChannel !== 'function') return;
+          const bc = new BroadcastChannel(name);
+          bc.onmessage = function (ev) {
+            try {
+              const d = ev && ev.data;
+              const payload = (d && typeof d === 'object') ? d : null;
+              if (!payload) return;
+              if (payload.type !== 'text') return;
+              const el = document.getElementById('text');
+              if (el) el.textContent = String(payload.text || '');
+            } catch {}
+          };
+          window.addEventListener('beforeunload', function () {
+            try { bc.close(); } catch {}
+          });
+        } catch {}
+      })();
     </script>
   </body>
 </html>
-

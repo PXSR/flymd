@@ -54,6 +54,8 @@
             "core:window:allow-start-dragging",
             "core:window:allow-start-resize-dragging",
             "core:window:allow-set-ignore-cursor-events",
+            "core:window:allow-show",
+            "core:window:allow-hide",
             "dialog:default",
             "dialog:allow-ask",
             "dialog:allow-open",

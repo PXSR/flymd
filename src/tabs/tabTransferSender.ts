@@ -173,6 +173,10 @@ export async function moveTabToWindowLabel(
   const sourceLabel = await getCurrentWebviewWindowLabel()
   if (!sourceLabel) return { ok: false, message: '当前环境不支持多窗口拖拽（非 Tauri）' }
 
+  // 记录“是否是最后一个标签”：用于把拖空的临时窗口自动关闭（避免留下空窗口）
+  const tabsSnapshot = tabManager.getTabs()
+  const isLastTabInWindow = tabsSnapshot.length === 1 && tabsSnapshot[0]?.id === tabId
+
   const snap = snapshotTabForTransfer(tabManager, tab)
   const transferId = genTransferId()
 
@@ -246,6 +250,14 @@ export async function moveTabToWindowLabel(
     // 成功：先清理临时文件，再关闭源标签（不弹确认，数据已复制到对方）
     await removeTempContent(tempPath)
     try { await tabManager.closeTab(tabId) } catch {}
+
+    // 如果这是一个“拖出来自动创建”的窗口（main-*），且拖走了最后一个标签，则自动关闭该窗口
+    if (isLastTabInWindow && sourceLabel.startsWith('main-')) {
+      try {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        await WebviewWindow.getCurrent().close()
+      } catch {}
+    }
     return { ok: true }
   } catch (e) {
     await removeTempContent(tempPath)

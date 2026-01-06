@@ -12,8 +12,8 @@
 import { TabManager } from './TabManager'
 import { TabDocument, getTabDisplayName } from './types'
 import { moveTabToWindowLabel } from './tabTransferSender'
-import { createEditorWebviewWindow, findWebviewWindowLabelAtScreenPoint, getCurrentWebviewWindowLabel } from '../windows/editorWindows'
-import { createDragGhostWindow, type DragGhostWindow } from '../windows/dragGhostWindow'
+import { createEditorWebviewWindow, destroyWebviewWindowByLabel, findWebviewWindowLabelAtScreenPoint, getCurrentWebviewWindowLabel } from '../windows/editorWindows'
+import { cleanupDragGhostWindows, createDragGhostWindow, type DragGhostWindow } from '../windows/dragGhostWindow'
 
 export interface TabBarOptions {
   container: HTMLElement
@@ -41,6 +41,11 @@ export class TabBar {
   private dragGhostLastMoveAt = 0
   private dragGhostCreating = false
   private dragGhostGen = 0
+  private dragGhostVisible = false
+  private dragGhostMoveInFlight = false
+  private dragGhostPending: { text: string; x: number; y: number } | null = null
+  private dragGhostToken = 0
+  private dragGhostLastText = ''
   private handleContextMenuOutside = (event: Event) => {
     if (!this.contextMenuVisible) return
     const target = event.target as Node | null
@@ -67,6 +72,8 @@ export class TabBar {
   init(): void {
     this.render()
     this.bindEvents()
+    // 兜底清理：把旧版本遗留的 drag-ghost 窗口干掉（避免用户看到一屏“拖拽标签”残影）
+    try { setTimeout(() => { void cleanupDragGhostWindows() }, 0) } catch {}
   }
 
   /**
@@ -219,7 +226,8 @@ export class TabBar {
     }
 
     const isOutsideWindow = (e: PointerEvent, margin: number) => {
-      return isOutsideWindowClient(e.clientX, e.clientY, margin) || isOutsideWindowScreen(e.screenX, e.screenY, margin)
+      // 只用 client 坐标判定：在 Tauri 下 window.screenX/outerWidth 的一致性不可靠，容易误判导致幽灵窗口不消失
+      return isOutsideWindowClient(e.clientX, e.clientY, margin)
     }
 
     const elementFromClientPoint = (x: number, y: number): HTMLElement | null => {
@@ -235,8 +243,8 @@ export class TabBar {
     }
 
     const cleanupDrag = () => {
-      // 先关掉“窗口外幽灵”，避免残留挡手
-      void this.destroyDragGhostWindow()
+      // 先隐藏“窗口外幽灵”，避免残留挡手（窗口保留用于复用，减少下次拖出延迟）
+      void this.hideDragGhostWindow()
       tabEl.removeEventListener('pointermove', handlePointerMove)
       tabEl.removeEventListener('pointerup', handlePointerUp, true)
       tabEl.removeEventListener('pointercancel', handlePointerCancel, true)
@@ -269,6 +277,9 @@ export class TabBar {
         tabEl.classList.add('dragging')
         try { document.body.style.userSelect = 'none' } catch {}
         try { document.body.style.cursor = 'grabbing' } catch {}
+
+        // 预热“窗口外幽灵窗口”：尽量在鼠标真正跨出窗口之前就把窗口建好
+        void this.ensureDragGhostWindow((tab.dirty ? '● ' : '') + getTabDisplayName(tab))
 
         // 创建幽灵元素
         try {
@@ -594,8 +605,8 @@ export class TabBar {
    * - 兼容旧行为：按住 Alt 拖出 → 仍用系统关联打开“新进程实例”（老功能不被砍掉）
    */
   private async detachTabByDropPoint(tabId: string, e: PointerEvent): Promise<void> {
-    // 拖放落地前先关掉“窗口外幽灵”，避免目标窗口被遮挡
-    try { await this.destroyDragGhostWindow() } catch {}
+    // 拖放落地前先隐藏“窗口外幽灵”，避免目标窗口被遮挡
+    try { await this.hideDragGhostWindow() } catch {}
     // 老行为保留：给用户留后门，避免“习惯被硬改”
     if (e.altKey) {
       await this.detachTabToNewInstance(tabId)
@@ -619,7 +630,11 @@ export class TabBar {
     }
 
     // 2) 没命中：创建新窗口再投递
-    const created = await createEditorWebviewWindow()
+    const created = await createEditorWebviewWindow({
+      // 尽量在鼠标释放点附近创建窗口（用户直觉）
+      x: Math.round(e.screenX),
+      y: Math.round(e.screenY),
+    })
     if (!created?.label) {
       // 创建失败：兜底回到旧的“新进程打开”行为
       await this.detachTabToNewInstance(tabId)
@@ -634,6 +649,8 @@ export class TabBar {
     })
     if (!r.ok && r.message) {
       try { alert('拖拽失败：' + r.message) } catch {}
+      // 自动创建的空窗口：投递失败就销毁，避免留下一个“空实例”
+      try { await destroyWebviewWindowByLabel(created.label) } catch {}
     }
   }
 
@@ -643,52 +660,100 @@ export class TabBar {
     this.dragGhostLastMoveAt = 0
     this.dragGhostCreating = false
     this.dragGhostGen++
+    this.dragGhostVisible = false
+    this.dragGhostPending = null
+    this.dragGhostMoveInFlight = false
+    this.dragGhostToken++
+    this.dragGhostLastText = ''
     if (!w) return
     try { await w.destroy() } catch {}
   }
 
-  private async updateDragGhostWindow(outside: boolean, tab: TabDocument, screenX: number, screenY: number): Promise<void> {
+  private async hideDragGhostWindow(): Promise<void> {
+    this.dragGhostPending = null
+    this.dragGhostToken++
+    if (!this.dragGhostWin) return
+    if (!this.dragGhostVisible) return
+    try { await this.dragGhostWin.hide() } catch {}
+    this.dragGhostVisible = false
+  }
+
+  private async ensureDragGhostWindow(initialText: string): Promise<void> {
+    if (this.dragGhostWin) return
+    if (this.dragGhostCreating) return
+    this.dragGhostCreating = true
+    const gen = this.dragGhostGen
+    let created: DragGhostWindow | null = null
+    try {
+      created = await createDragGhostWindow(initialText)
+    } finally {
+      this.dragGhostCreating = false
+    }
+    if (!created) return
+    if (this.dragGhostGen !== gen || this.dragGhostWin) {
+      try { await created.destroy() } catch {}
+      return
+    }
+    this.dragGhostWin = created
+    this.dragGhostVisible = false
+    this.dragGhostLastText = ''
+  }
+
+  private queueDragGhostUpdate(text: string, x: number, y: number): void {
+    this.dragGhostPending = { text, x, y }
+    if (this.dragGhostMoveInFlight) return
+    this.dragGhostMoveInFlight = true
+    const token = this.dragGhostToken
+    void this.flushDragGhostUpdates(token)
+  }
+
+  private async flushDragGhostUpdates(token: number): Promise<void> {
+    try {
+      while (this.dragGhostPending && token === this.dragGhostToken) {
+        const p = this.dragGhostPending
+        this.dragGhostPending = null
+        await this.ensureDragGhostWindow(p.text)
+        if (!this.dragGhostWin || token !== this.dragGhostToken) break
+
+        if (token !== this.dragGhostToken) break
+        if (this.dragGhostLastText !== p.text) {
+          try { this.dragGhostWin.setText(p.text) } catch {}
+          this.dragGhostLastText = p.text
+        }
+        if (token !== this.dragGhostToken) break
+        if (!this.dragGhostVisible) {
+          try { await this.dragGhostWin.show() } catch {}
+          this.dragGhostVisible = true
+        }
+        if (token !== this.dragGhostToken) break
+        await this.dragGhostWin.setPosition(p.x, p.y)
+      }
+    } finally {
+      this.dragGhostMoveInFlight = false
+      // 若在本次 flush 结束后又来了新的位置更新，由 queueDragGhostUpdate 再次启动
+    }
+  }
+
+  private updateDragGhostWindow(outside: boolean, tab: TabDocument, screenX: number, screenY: number): void {
     // 只在 Tauri 桌面端生效，失败静默降级
     if (!outside) {
-      if (this.dragGhostWin) {
-        await this.destroyDragGhostWindow()
-      }
+      void this.hideDragGhostWindow()
       return
     }
 
     // 节流：窗口移动是 IPC，别每个 pointermove 都打
     const now = Date.now()
-    if (now - this.dragGhostLastMoveAt < 28 && this.dragGhostWin) return
+    if (now - this.dragGhostLastMoveAt < 28) return
     this.dragGhostLastMoveAt = now
 
-    if (!this.dragGhostWin) {
-      if (this.dragGhostCreating) return
-      this.dragGhostCreating = true
-      const gen = this.dragGhostGen
-      let created: DragGhostWindow | null = null
-      try {
-        const name = getTabDisplayName(tab)
-        const dirtyMark = tab.dirty ? '● ' : ''
-        created = await createDragGhostWindow(dirtyMark + name)
-      } finally {
-        this.dragGhostCreating = false
-      }
-
-      if (!created) return
-      // 创建过程中如果已经被销毁/状态变化，立刻关掉，避免窗口泄漏
-      if (this.dragGhostGen !== gen || !outside || this.dragGhostWin) {
-        try { await created.destroy() } catch {}
-        return
-      }
-      this.dragGhostWin = created
-    }
-
-    if (!this.dragGhostWin) return
+    const name = getTabDisplayName(tab)
+    const dirtyMark = tab.dirty ? '● ' : ''
+    const text = dirtyMark + name
 
     // 让幽灵稍微避开鼠标指针，别正好盖在指针下
     const x = (Number.isFinite(screenX) ? screenX : 0) + 14
     const y = (Number.isFinite(screenY) ? screenY : 0) + 18
-    void this.dragGhostWin.setPosition(x, y)
+    this.queueDragGhostUpdate(text, x, y)
   }
 
   /**
@@ -841,6 +906,8 @@ export class TabBar {
       this.unsubscribe = null
     }
     this.hideContextMenu()
+    // 组件销毁时确保幽灵窗口也销毁（避免 dev 热更新残留）
+    void this.destroyDragGhostWindow()
     if (this.contextMenuEl && this.contextMenuEl.parentElement) {
       this.contextMenuEl.parentElement.removeChild(this.contextMenuEl)
     }

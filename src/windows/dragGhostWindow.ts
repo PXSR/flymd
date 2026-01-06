@@ -29,8 +29,8 @@ export async function cleanupDragGhostWindows(): Promise<void> {
     for (const w of wins) {
       try {
         const label = String((w as any)?.label || '')
-        // 只清理旧版本遗留的随机 label，避免误杀当前版本的可复用窗口
-        if (!label.startsWith(LEGACY_LABEL_PREFIX)) continue
+        // 只清理拖拽幽灵窗口：包括旧版本随机 label 与当前版本稳定 label
+        if (!label.startsWith(LEGACY_LABEL_PREFIX) && !label.startsWith(LABEL_PREFIX)) continue
         await w.destroy()
       } catch {}
     }

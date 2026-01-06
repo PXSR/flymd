@@ -673,7 +673,6 @@ export class TabBar {
     this.dragGhostPending = null
     this.dragGhostToken++
     if (!this.dragGhostWin) return
-    if (!this.dragGhostVisible) return
     try { await this.dragGhostWin.hide() } catch {}
     this.dragGhostVisible = false
   }
@@ -723,6 +722,11 @@ export class TabBar {
         if (token !== this.dragGhostToken) break
         if (!this.dragGhostVisible) {
           try { await this.dragGhostWin.show() } catch {}
+          // show/hide 是异步 IPC：若在 show 过程中被取消（token 变更），必须立刻补一刀 hide，避免幽灵窗口“亮出来就没人管”
+          if (token !== this.dragGhostToken) {
+            try { await this.dragGhostWin.hide() } catch {}
+            break
+          }
           this.dragGhostVisible = true
         }
         if (token !== this.dragGhostToken) break

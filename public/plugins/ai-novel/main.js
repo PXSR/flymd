@@ -104,6 +104,10 @@ const DEFAULT_CFG = {
     thinkingMode: 'none',
     // 自动审计默认关闭（让用户自己决定要不要花预算）
     audit: false
+  },
+  autoWrite: {
+    // 全自动续写：默认章数（仅作为输入默认值；不会自动启动）
+    chapters: 5
   }
 }
 
@@ -149,6 +153,7 @@ async function loadCfg(ctx) {
         const rrs = rr.subIndex && typeof rr.subIndex === 'object' ? rr.subIndex : {}
         const rcon = raw.constraints && typeof raw.constraints === 'object' ? raw.constraints : {}
         const ra = raw.agent && typeof raw.agent === 'object' ? raw.agent : {}
+        const rawAuto = raw.autoWrite && typeof raw.autoWrite === 'object' ? raw.autoWrite : {}
         out.upstream = { ...DEFAULT_CFG.upstream, ...ru }
         out.planUpstream = { ...DEFAULT_CFG.planUpstream, ...rpu }
         out.embedding = { ...DEFAULT_CFG.embedding, ...re }
@@ -158,6 +163,7 @@ async function loadCfg(ctx) {
         out.rag.subIndex = { ...(DEFAULT_CFG.rag.subIndex || {}), ...rrs }
         out.constraints = { ...DEFAULT_CFG.constraints, ...rcon }
         out.agent = { ...DEFAULT_CFG.agent, ...ra }
+        out.autoWrite = { ...DEFAULT_CFG.autoWrite, ...rawAuto }
       } catch {}
       // 兼容旧配置：upstream.planModel -> planUpstream.model
       try {
@@ -197,6 +203,7 @@ async function saveCfg(ctx, patch) {
     }
     if (p.constraints && typeof p.constraints === 'object') out.constraints = { ...(cur.constraints || {}), ...p.constraints }
     if (p.agent && typeof p.agent === 'object') out.agent = { ...(cur.agent || {}), ...p.agent }
+    if (p.autoWrite && typeof p.autoWrite === 'object') out.autoWrite = { ...(cur.autoWrite || {}), ...p.autoWrite }
   } catch {}
   // 后端地址强制内置（不允许被保存覆盖）
   out.backendBaseUrl = DEFAULT_CFG.backendBaseUrl
@@ -7169,6 +7176,324 @@ async function openWriteWithChoiceDialog(ctx) {
   })
 }
 
+function _ainAutoWriteMakeChoice(instruction) {
+  const ins = safeText(instruction).trim().replace(/\s+/g, ' ')
+  const one = ins.length > 180 ? (ins.slice(0, 180) + '…') : ins
+  return {
+    title: t('全自动续写', 'Auto-write'),
+    one_line: one || t('自动', 'Auto'),
+    conflict: '',
+    characters: [],
+    foreshadow: '',
+    risks: ''
+  }
+}
+
+async function _ainAutoWriteAppendToFile(ctx, absPath, text) {
+  const p = safeText(absPath).trim()
+  const add = safeText(text).trim()
+  if (!p || !add) return false
+
+  let cur = ''
+  try { cur = safeText(await readTextAny(ctx, p)) } catch { cur = '' }
+  const base = safeText(cur).trimEnd()
+  const sep = base ? '\n\n' : ''
+  const next = (base + sep + add).trimEnd() + '\n'
+
+  await writeTextAny(ctx, p, next)
+
+  try {
+    if (ctx && typeof ctx.getCurrentFilePath === 'function' && typeof ctx.setEditorValue === 'function') {
+      const curPath = await ctx.getCurrentFilePath()
+      if (normFsPath(curPath) === normFsPath(p)) ctx.setEditorValue(next)
+    }
+  } catch {}
+
+  return true
+}
+
+async function _ainAutoWriteUpdateMetaFromChapter(ctx, cfg, chapPath, chapText, reason) {
+  const p = safeText(chapPath).trim()
+  const txt0 = safeText(chapText).trim()
+  if (!p || !txt0) return { ok: true, updated: false, skipped: true, why: 'empty' }
+
+  const lim = (cfg && cfg.ctx && cfg.ctx.maxUpdateSourceChars) ? (cfg.ctx.maxUpdateSourceChars | 0) : 20000
+  const prev = { path: p, text: sliceHeadTail(txt0, Math.max(2000, lim), 0.55) }
+
+  let castRes = null
+  let progRes = null
+  try { castRes = await char_state_try_update_from_prev_chapter(ctx, cfg, reason, { prev }) } catch { castRes = null }
+  try { progRes = await progress_try_update_from_prev_chapter(ctx, cfg, prev, reason) } catch { progRes = null }
+  return { ok: true, updated: true, cast: castRes, progress: progRes }
+}
+
+async function openAutoWriteDialog(ctx) {
+  let cfg = await loadCfg(ctx)
+  if (!cfg.token) throw new Error(t('请先登录后端', 'Please login first'))
+  if (!cfg.upstream || !cfg.upstream.baseUrl || !cfg.upstream.model) {
+    throw new Error(t('请先在设置里填写上游 BaseURL 和模型', 'Please set upstream BaseURL and model in Settings first'))
+  }
+
+  const { body } = createDialogShell(t('续写（全自动）', 'Auto-write'), null, { notice: 'none' })
+
+  const sec = document.createElement('div')
+  sec.className = 'ain-card'
+  sec.innerHTML = `<div style="font-weight:700;margin-bottom:6px">${t('全自动续写', 'Auto-write')}</div>`
+
+  function mkInputBox(label, value, type) {
+    const wrap = document.createElement('div')
+    const lab = document.createElement('div')
+    lab.className = 'ain-lab'
+    lab.textContent = label
+    const inp = document.createElement('input')
+    inp.className = 'ain-in'
+    inp.type = type || 'text'
+    inp.value = value == null ? '' : String(value)
+    wrap.appendChild(lab)
+    wrap.appendChild(inp)
+    return { wrap, inp }
+  }
+
+  const row1 = document.createElement('div')
+  row1.className = 'ain-row'
+  row1.style.gridTemplateColumns = '1fr'
+  const n0 = (cfg.autoWrite && cfg.autoWrite.chapters != null) ? (cfg.autoWrite.chapters | 0) : 5
+  const inpN = mkInputBox(t('要续写多少章（直接写入新文件）', 'Chapters to generate (writes into new files)'), String(n0 > 0 ? n0 : 5), 'number')
+  try {
+    inpN.inp.min = '1'
+    inpN.inp.max = '50'
+    inpN.inp.step = '1'
+  } catch {}
+  row1.appendChild(inpN.wrap)
+  sec.appendChild(row1)
+
+  const inpGoal = mkTextarea(
+    t('总目标/要求（可空）', 'Goal/requirements (optional)'),
+    ''
+  )
+  try {
+    inpGoal.ta.placeholder = t(
+      '可空：不填则完全自动。你可以写：节奏/视角/禁写项/本轮要推进的矛盾…',
+      'Optional: pacing/POV/no-go/main conflict... Leave empty for fully automatic.'
+    )
+  } catch {}
+  sec.appendChild(inpGoal.wrap)
+
+  const inpExtra = mkTextarea(
+    t('额外硬约束（可空，会进入 system）', 'Hard constraints (optional, goes to system)'),
+    ''
+  )
+  sec.appendChild(inpExtra.wrap)
+
+  const hint = document.createElement('div')
+  hint.className = 'ain-muted'
+  hint.style.marginTop = '6px'
+  hint.textContent = t(
+    '警告：该模式会自动创建章节文件并直接写入正文；中途失败会停止。建议先确认上游/余额/RAG 配置无误。',
+    'Warning: creates chapter files and writes prose directly; stops on failure. Ensure upstream/balance/RAG are configured.'
+  )
+  sec.appendChild(hint)
+
+  const rowBtn = mkBtnRow()
+  const btnStart = document.createElement('button')
+  btnStart.className = 'ain-btn'
+  btnStart.textContent = t('开始执行', 'Start')
+  const btnAbort = document.createElement('button')
+  btnAbort.className = 'ain-btn gray'
+  btnAbort.textContent = t('终止', 'Abort')
+  btnAbort.disabled = true
+  rowBtn.appendChild(btnStart)
+  rowBtn.appendChild(btnAbort)
+  sec.appendChild(rowBtn)
+
+  const st = document.createElement('div')
+  st.className = 'ain-muted'
+  st.style.marginTop = '6px'
+  st.textContent = t('状态：待开始', 'Status: idle')
+  sec.appendChild(st)
+
+  const out = document.createElement('div')
+  out.className = 'ain-out'
+  out.style.marginTop = '10px'
+  out.textContent = t('日志会显示在这里。', 'Logs will appear here.')
+  sec.appendChild(out)
+
+  body.appendChild(sec)
+
+  let running = false
+  let control = null
+  const logs = []
+  function pushLog(line) {
+    const s = safeText(line).trimEnd()
+    if (!s) return
+    logs.push(s)
+    while (logs.length > 240) logs.shift()
+    try { out.textContent = logs.join('\n') } catch {}
+  }
+
+  function setStatus(s) {
+    try { st.textContent = t('状态：', 'Status: ') + safeText(s) } catch {}
+  }
+
+  btnAbort.onclick = () => {
+    try {
+      if (!control || typeof control.abort !== 'function') return
+      control.abort()
+      pushLog(t('已发出终止请求', 'Abort requested'))
+      setStatus(t('终止中…', 'Aborting...'))
+    } catch {}
+  }
+
+  btnStart.onclick = async () => {
+    if (running) return
+    running = true
+    btnStart.disabled = true
+    btnAbort.disabled = false
+
+    try {
+      cfg = await loadCfg(ctx)
+      const chapters = _clampInt(inpN.inp.value, 1, 50)
+      try { inpN.inp.value = String(chapters) } catch {}
+      try { cfg = await saveCfg(ctx, { autoWrite: { chapters } }) } catch {}
+
+      const ok = await openConfirmDialog(ctx, {
+        title: t('确认全自动续写', 'Confirm auto-write'),
+        message:
+          t('将自动创建并直接写入章节文件。\n章数：', 'This will create chapter files and write prose directly.\nChapters: ') +
+          String(chapters) +
+          '\n\n' +
+          t('继续？', 'Continue?'),
+        okText: t('开始', 'Start'),
+        cancelText: t('取消', 'Cancel')
+      })
+      if (!ok) {
+        setStatus(t('已取消', 'Cancelled'))
+        return
+      }
+
+      control = _ainCreateAgentRunControl()
+      logs.length = 0
+      pushLog(t('开始执行…', 'Starting...'))
+
+      const goal = safeText(inpGoal.ta.value).trim()
+      const localConstraints = safeText(inpExtra.ta.value).trim()
+      const reason = t('全自动续写', 'Auto-write')
+
+      // 先尝试把“当前上一章”同步到人物状态/进度脉络，避免从旧资料直接起跑
+      try {
+        const lim = (cfg && cfg.ctx && cfg.ctx.maxUpdateSourceChars) ? (cfg.ctx.maxUpdateSourceChars | 0) : 20000
+        const prev0 = await getPrevChapterTextForExtract(ctx, cfg, lim)
+        if (prev0 && safeText(prev0.text).trim()) {
+          setStatus(t('预更新：人物状态/进度脉络…', 'Pre-update: states/progress...'))
+          const pre = await _ainAutoWriteUpdateMetaFromChapter(ctx, cfg, prev0.path, prev0.text, reason)
+          pushLog(t('预更新完成', 'Pre-update done') + (pre && pre.progress && pre.progress.updated ? '' : ''))
+        }
+      } catch {}
+
+      let lastPath = ''
+      let lastText = ''
+      for (let i = 0; i < chapters; i++) {
+        if (control && control.aborted) break
+        cfg = await loadCfg(ctx)
+        if (!cfg || !cfg.token) throw new Error(t('未登录后端', 'Not logged in'))
+        if (!cfg.upstream || !cfg.upstream.baseUrl || !cfg.upstream.model) throw new Error(t('上游未配置', 'Upstream not configured'))
+
+        setStatus(t('创建第 ', 'Creating chapter ') + String(i + 1) + '/' + String(chapters))
+        const inf = await novel_create_next_chapter_impl(ctx, cfg, { confirm: false, updateMeta: false, showNotices: false })
+        if (!inf || !inf.chapPath) throw new Error(t('创建章节失败', 'Failed to create chapter'))
+
+        pushLog(t('已创建：', 'Created: ') + String(fsBaseName(inf.chapPath)))
+
+        const baseIns = goal || t(
+          '请基于【进度脉络】【资料/圣经】【前文尾部】自动决定本章走向并续写正文。只输出正文，不要标题，不要分析，不要列候选。',
+          'Based on context, decide the arc and continue the prose. Output prose only (no title, no analysis, no options).'
+        )
+        const inst = baseIns + '\n\n' + t(
+          `（全自动续写：第 ${i + 1}/${chapters} 章）`,
+          `(Auto-write: chapter ${i + 1}/${chapters})`
+        )
+
+        const constraints = _ainAppendWritingStyleHintToConstraints(await mergeConstraintsWithCharState(ctx, cfg, localConstraints))
+        const prev = await getPrevTextForRequest(ctx, cfg)
+        const progress = await getProgressDocText(ctx, cfg)
+        const bible = await getBibleDocText(ctx, cfg)
+        let rag = null
+        try {
+          setStatus(t('检索（RAG）…', 'RAG...'))
+          rag = await rag_get_hits(ctx, cfg, inst + '\n\n' + sliceTail(prev, 2000))
+        } catch {}
+
+        setStatus(t('写作中…', 'Writing...'))
+        const input0 = {
+          instruction: inst + '\n\n' + t('长度要求：正文尽量控制在 3000 字以内。', 'Length: keep the prose within ~3000 chars.'),
+          progress,
+          bible,
+          prev,
+          choice: _ainAutoWriteMakeChoice(inst),
+          constraints: constraints || undefined,
+          rag: rag || undefined
+        }
+        const b = _ainCtxApplyBudget(cfg, input0, { mode: 'write' })
+        const r = await apiFetchChatWithJob(ctx, cfg, {
+          mode: 'novel',
+          action: 'write',
+          upstream: {
+            baseUrl: cfg.upstream.baseUrl,
+            apiKey: cfg.upstream.apiKey,
+            model: cfg.upstream.model
+          },
+          input: (b && b.input) ? b.input : input0
+        }, {
+          control,
+          timeoutMs: 190000,
+          onTick: ({ waitMs }) => {
+            const s = Math.max(0, Math.round(Number(waitMs || 0) / 1000))
+            setStatus(t('写作中… 已等待 ', 'Writing... waited ') + String(s) + 's')
+          }
+        })
+
+        if (control && control.aborted) break
+
+        let text0 = safeText(r && r.text).trim()
+        if (!text0) throw new Error(t('后端未返回正文', 'Backend returned empty text'))
+        text0 = _ainMaybeTypesetWebNovel(cfg, text0)
+
+        setStatus(t('写入文件…', 'Writing file...'))
+        await _ainAutoWriteAppendToFile(ctx, inf.chapPath, text0)
+        pushLog(t('已写入：', 'Written: ') + String(fsBaseName(inf.chapPath)) + ` (${text0.length} chars)`)
+
+        lastPath = inf.chapPath
+        lastText = text0
+
+        // 更新人物状态/进度脉络（给下一章用）；失败不阻断主流程
+        try {
+          setStatus(t('更新人物状态/进度脉络…', 'Updating states/progress...'))
+          await _ainAutoWriteUpdateMetaFromChapter(ctx, cfg, lastPath, lastText, reason)
+        } catch {}
+      }
+
+      if (control && control.aborted) {
+        pushLog(t('已终止。', 'Aborted.'))
+        setStatus(t('已终止', 'Aborted'))
+        return
+      }
+
+      pushLog(t('已完成。', 'Done.'))
+      setStatus(t('已完成', 'Done'))
+    } catch (e) {
+      const msg = e && e.message ? String(e.message) : String(e)
+      pushLog(t('失败：', 'Failed: ') + msg)
+      setStatus(t('失败', 'Failed'))
+      try { ctx.ui.notice(t('失败：', 'Failed: ') + msg, 'err', 3200) } catch {}
+    } finally {
+      try { btnStart.disabled = false } catch {}
+      try { btnAbort.disabled = true } catch {}
+      running = false
+      control = null
+    }
+  }
+}
+
 async function callNovel(ctx, action, instructionOverride, constraintsOverride) {
   const cfg = await loadCfg(ctx)
   if (!cfg.token) throw new Error(t('请先登录后端', 'Please login first'))
@@ -9973,17 +10298,29 @@ async function _ainTryInsertNoteAfterFirstLineInPath(ctx, absPath, noteLine) {
 
 async function novel_create_next_chapter(ctx) {
   const cfg = await loadCfg(ctx)
+  return await novel_create_next_chapter_impl(ctx, cfg, { confirm: true })
+}
+
+async function novel_create_next_chapter_impl(ctx, cfg, opt) {
+  const o = (opt && typeof opt === 'object') ? opt : {}
+  const needConfirm = o.confirm !== false
+  const updateMeta = o.updateMeta !== false
+  const showNotices = o.showNotices !== false
   const inf = await computeNextChapterPath(ctx, cfg)
   if (!inf) throw new Error(t('未发现项目：请先在“小说→项目管理”选择项目，或打开项目内文件。', 'No project: select one in Project Manager or open a file under the project.'))
-  const ok = await openConfirmDialog(ctx, {
-    title: t('新建下一章', 'Create next chapter'),
-    message:
-      t('将在章节目录创建文件：\n', 'Will create file under chapters:\n') +
-      String(inf.chapPath || '') +
-      '\n\n' +
-      t('创建并打开它？', 'Create and open it?'),
-  })
-  if (!ok) return null
+
+  if (needConfirm) {
+    const ok = await openConfirmDialog(ctx, {
+      title: t('新建下一章', 'Create next chapter'),
+      message:
+        t('将在章节目录创建文件：\n', 'Will create file under chapters:\n') +
+        String(inf.chapPath || '') +
+        '\n\n' +
+        t('创建并打开它？', 'Create and open it?'),
+    })
+    if (!ok) return null
+  }
+
   const title = `# 第${inf.chapZh}章`
   const titleBusy = '# 正在更新人物状态/进度脉络……请耐心等待'
   await writeTextAny(ctx, inf.chapPath, title + '\n\n')
@@ -9996,50 +10333,74 @@ async function novel_create_next_chapter(ctx) {
   } catch {}
 
   // 自动更新人物状态：只在“开始下一章”时更新，避免草稿小片段导致信息丢失
-  if (opened) {
+  if (opened && updateMeta) {
     let hold = null
     let r = null
     let pr = null
     try {
-      try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, title, titleBusy) } catch {}
+      if (showNotices) {
+        try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, title, titleBusy) } catch {}
+      }
       const lim = (cfg && cfg.ctx && cfg.ctx.maxUpdateSourceChars) ? (cfg.ctx.maxUpdateSourceChars | 0) : 20000
       const prev = await getPrevChapterTextForExtract(ctx, cfg, lim)
-      hold = ui_notice_hold_begin(ctx, t('人物状态/进度脉络更新中…请等待更新完成再使用续写功能', 'Updating character states/progress... Please wait until it finishes before continuing.'))
+      if (showNotices) {
+        hold = ui_notice_hold_begin(ctx, t('人物状态/进度脉络更新中…请等待更新完成再使用续写功能', 'Updating character states/progress... Please wait until it finishes before continuing.'))
+      }
       r = await char_state_try_update_from_prev_chapter(ctx, cfg, t('开始下一章', 'Start next chapter'), { prev })
       pr = await progress_try_update_from_prev_chapter(ctx, cfg, prev, '开始下一章')
     } catch (e) {
-      try { ctx.ui.notice(t('更新失败：', 'Update failed: ') + (e && e.message ? e.message : String(e)), 'err', 2600) } catch {}
+      if (showNotices) {
+        try { ctx.ui.notice(t('更新失败：', 'Update failed: ') + (e && e.message ? e.message : String(e)), 'err', 2600) } catch {}
+      }
     } finally {
-      ui_notice_hold_end(ctx, hold)
-      try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, titleBusy, title) } catch {}
+      if (showNotices) {
+        ui_notice_hold_end(ctx, hold)
+        try { await _ainTryReplaceFirstLineInPath(ctx, inf.chapPath, titleBusy, title) } catch {}
+      }
     }
 
     if (r && r.updated) {
       if (r.parseOk) {
-        try { ctx.ui.notice(t('人物状态已更新（写入 06_人物状态.md）', 'Character states updated (written to 06_人物状态.md)'), 'ok', 2000) } catch {}
+        if (showNotices) {
+          try { ctx.ui.notice(t('人物状态已更新（写入 06_人物状态.md）', 'Character states updated (written to 06_人物状态.md)'), 'ok', 2000) } catch {}
+        }
       } else {
-        try { ctx.ui.notice(t('人物状态更新失败：已把 AI 原文写入 06_人物状态.md（请手动整理）', 'Character state update failed: raw output saved to 06_人物状态.md'), 'err', 2600) } catch {}
+        if (showNotices) {
+          try { ctx.ui.notice(t('人物状态更新失败：已把 AI 原文写入 06_人物状态.md（请手动整理）', 'Character state update failed: raw output saved to 06_人物状态.md'), 'err', 2600) } catch {}
+        }
       }
     } else if (r && r.ok === false) {
-      try { ctx.ui.notice(t('人物状态更新失败：', 'Character state update failed: ') + safeText(r.error || ''), 'err', 2600) } catch {}
+      if (showNotices) {
+        try { ctx.ui.notice(t('人物状态更新失败：', 'Character state update failed: ') + safeText(r.error || ''), 'err', 2600) } catch {}
+      }
     }
     if (pr && pr.updated) {
-      try { ctx.ui.notice(t('进度脉络已更新（写入 01_进度脉络.md）', 'Progress updated (written to 01_进度脉络.md)'), 'ok', 2000) } catch {}
+      if (showNotices) {
+        try { ctx.ui.notice(t('进度脉络已更新（写入 01_进度脉络.md）', 'Progress updated (written to 01_进度脉络.md)'), 'ok', 2000) } catch {}
+      }
     } else if (pr && pr.ok === false) {
-      try { ctx.ui.notice(t('进度脉络更新失败：', 'Progress update failed: ') + safeText(pr.error || ''), 'err', 2600) } catch {}
+      if (showNotices) {
+        try { ctx.ui.notice(t('进度脉络更新失败：', 'Progress update failed: ') + safeText(pr.error || ''), 'err', 2600) } catch {}
+      }
     } else if (pr && pr.ok && !pr.updated) {
       if (pr.why === 'already') {
-        try { ctx.ui.notice(t('进度脉络未更新：该来源章节已更新过', 'Progress not updated: already updated for this source'), 'ok', 1800) } catch {}
-        try { await _ainTryInsertNoteAfterFirstLineInPath(ctx, inf.chapPath, '自动脉络未写入文件，原因：已更新。请手动检查/更新确认。') } catch {}
+        if (showNotices) {
+          try { ctx.ui.notice(t('进度脉络未更新：该来源章节已更新过', 'Progress not updated: already updated for this source'), 'ok', 1800) } catch {}
+          try { await _ainTryInsertNoteAfterFirstLineInPath(ctx, inf.chapPath, '自动脉络未写入文件，原因：已更新。请手动检查/更新确认。') } catch {}
+        }
       } else if (pr.why === 'empty') {
-        try { ctx.ui.notice(t('进度脉络未更新：上游返回空（可能是模型/拒答/截断）', 'Progress not updated: upstream returned empty'), 'err', 2600) } catch {}
-        try { await _ainTryInsertNoteAfterFirstLineInPath(ctx, inf.chapPath, '自动脉络未写入文件，原因：上游返回为空。请手动检查/更新确认。') } catch {}
+        if (showNotices) {
+          try { ctx.ui.notice(t('进度脉络未更新：上游返回空（可能是模型/拒答/截断）', 'Progress not updated: upstream returned empty'), 'err', 2600) } catch {}
+          try { await _ainTryInsertNoteAfterFirstLineInPath(ctx, inf.chapPath, '自动脉络未写入文件，原因：上游返回为空。请手动检查/更新确认。') } catch {}
+        }
       }
     }
   }
 
-  ctx.ui.notice(t('已创建并打开：', 'Created: ') + String(fsBaseName(inf.chapPath)), 'ok', 2000)
-  ctx.ui.notice(t('提示：打开该章节后再用“续写正文”并追加，就会写入该章节文件。', 'Tip: open this chapter then use Write and append; it will go into this file.'), 'ok', 2600)
+  if (showNotices) {
+    ctx.ui.notice(t('已创建并打开：', 'Created: ') + String(fsBaseName(inf.chapPath)), 'ok', 2000)
+    ctx.ui.notice(t('提示：打开该章节后再用“续写正文”并追加，就会写入该章节文件。', 'Tip: open this chapter then use Write and append; it will go into this file.'), 'ok', 2600)
+  }
   return inf
 }
 
@@ -13556,19 +13917,23 @@ export function activate(context) {
       if (typeof context.addContextMenuItem === 'function') {
         __CTX_MENU_DISPOSER__ = context.addContextMenuItem({
           label: t('小说引擎', 'Novel Engine'),
-          icon: '📚',
-          condition: (ctx) => {
-            if (!ctx) return true
-            return ctx.mode === 'edit' || ctx.mode === 'wysiwyg'
-          },
-          children: [
-            {
-              label: t('写作咨询', 'Writing consult'),
+           icon: '📚',
+           condition: (ctx) => {
+             if (!ctx) return true
+            return ctx.mode === 'edit' || ctx.mode === 'preview' || ctx.mode === 'wysiwyg'
+           },
+           children: [
+             {
+               label: t('写作咨询', 'Writing consult'),
               onClick: () => { void openConsultDialog(context) }
             },
             {
               label: t('走向续写', 'Options & Write'),
               onClick: () => { void openWriteWithChoiceDialog(context) }
+            },
+            {
+              label: t('续写（全自动）', 'Auto-write'),
+              onClick: () => { void openAutoWriteDialog(context) }
             },
             {
               label: t('新建下章', 'Create next chapter'),

@@ -3,6 +3,7 @@ import type MarkdownIt from 'markdown-it'
 import katex from 'katex'
 // 启用 mhchem：支持 \ce{...} / \pu{...} 等化学公式宏（所见模式/阅读模式共用同一份 KaTeX 实例）
 import 'katex/contrib/mhchem'
+import { normalizeKatexLatexForInline } from '../utils/katexNormalize'
 
 type KatexOpts = Parameters<typeof katex.renderToString>[1]
 
@@ -85,6 +86,12 @@ export default function katexPlugin(md: MarkdownIt, options: KatexOpts = {}) {
   //   <span class="md-math-inline" data-math="..."></span>
   //   <div class="md-math-block" data-math="..."></div>
   // 这样 DOMPurify 不会剥离关键 SVG/path 属性，因为真正的 KaTeX DOM 在消毒之后才插入。
-  md.renderer.rules.math_inline = (t: any, i: number) => `<span class="md-math-inline" data-math="${esc(t[i].content)}"></span>`
-  md.renderer.rules.math_block = (t: any, i: number) => `<div class="md-math-block" data-math="${esc(t[i].content)}"></div>\n`
+  md.renderer.rules.math_inline = (t: any, i: number) => {
+    const fixed = normalizeKatexLatexForInline(t[i].content || '')
+    return `<span class="md-math-inline" data-math="${esc(fixed)}"></span>`
+  }
+  md.renderer.rules.math_block = (t: any, i: number) => {
+    const fixed = normalizeKatexLatexForInline(t[i].content || '')
+    return `<div class="md-math-block" data-math="${esc(fixed)}"></div>\n`
+  }
 }

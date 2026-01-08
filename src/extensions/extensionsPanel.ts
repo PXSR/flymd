@@ -583,36 +583,6 @@ function renderInstalledExtensions(
     meta.appendChild(name); meta.appendChild(desc)
     const actions = document.createElement('div'); actions.className = 'ext-actions'
 
-    const showToggleLabel = document.createElement('label')
-    showToggleLabel.className = 'ext-show-toggle'
-    showToggleLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;margin-right:8px'
-    const showToggleCheckbox = document.createElement('input')
-    showToggleCheckbox.type = 'checkbox'
-    showToggleCheckbox.checked = !!p.showInMenuBar
-    showToggleCheckbox.style.cursor = 'pointer'
-    showToggleCheckbox.addEventListener('change', async (e) => {
-      if (!host) return
-      try {
-        const checked = (e.target as HTMLInputElement).checked
-        p.showInMenuBar = checked
-        installedMap[p.id] = p
-        await setInstalledPluginsToStore(installedMap)
-        if (p.enabled) {
-          await host.deactivatePlugin(p.id)
-          await host.activatePlugin(p)
-        }
-        host.pluginNotice(checked ? t('ext.filter.showStandalone.on') : t('ext.filter.showStandalone.off'), 'ok', 1500)
-      } catch (err) {
-        host.showError(t('ext.filter.showStandalone.fail'), err)
-      }
-    })
-    const showToggleText = document.createElement('span')
-    showToggleText.textContent = t('ext.filter.showStandalone')
-    showToggleText.style.fontSize = '12px'
-    showToggleLabel.appendChild(showToggleCheckbox)
-    showToggleLabel.appendChild(showToggleText)
-    actions.appendChild(showToggleLabel)
-
     if (p.enabled && host) {
       const btnSet = document.createElement('button'); btnSet.className = 'btn'; btnSet.textContent = t('ext.settings')
       btnSet.addEventListener('click', async () => {

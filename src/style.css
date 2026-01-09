@@ -3169,11 +3169,11 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .container.md-journal:not(.wysiwyg):not(.wysiwyg-v2) .preview pre { background: #fffdf7; border: 1px dashed #e2d6c2; }
 
 /* 所见 V2 对应的代码与表格风格（尽量与预览保持一致） */
-.container.md-github.wysiwyg-v2 .ProseMirror pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: var(--radius-md); box-shadow: none; --code-pre-pad-y: 20px; padding: var(--code-pre-pad-y); }
+.container.md-github.wysiwyg-v2 .ProseMirror pre { background: #f6f8fa; border: none; border-radius: var(--radius-md); box-shadow: none; --code-pre-pad-y: 20px; padding: var(--code-pre-pad-y); }
 .container.md-github.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: var(--radius-sm); }
-.container.md-notion.wysiwyg-v2 .ProseMirror pre { background: #f7f6f3; border: none; border-radius: var(--radius-lg); box-shadow: 0 1px 2px rgba(0,0,0,0.06); --code-pre-pad-y: 16px; padding-left: 18px; padding-right: 18px; padding-bottom: var(--code-pre-pad-y); }
+.container.md-notion.wysiwyg-v2 .ProseMirror pre { background: #f7f6f3; border: none; border-radius: var(--radius-lg); box-shadow: none; --code-pre-pad-y: 16px; padding-left: 18px; padding-right: 18px; padding-bottom: var(--code-pre-pad-y); }
 .container.md-notion.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #f3f2ef; border: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04); border-radius: var(--radius-md); }
-.container.md-journal.wysiwyg-v2 .ProseMirror pre { background: #fffdf7; border: 1px dashed #e2d6c2; border-radius: 10px; --code-pre-pad-y: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: var(--code-pre-pad-y); }
+.container.md-journal.wysiwyg-v2 .ProseMirror pre { background: #fffdf7; border: none; border-radius: 10px; --code-pre-pad-y: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: var(--code-pre-pad-y); }
 .container.md-journal.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #fffaf2; border: 1px dashed #eadfcf; border-radius: var(--radius-md); }
 .container.md-notion.wysiwyg-v2 .ProseMirror table { border: 1px solid rgba(0,0,0,0.06); border-radius: var(--radius-md); overflow: hidden; }
 .container.md-notion.wysiwyg-v2 .ProseMirror th,
@@ -3197,7 +3197,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .container.md-docs .preview tbody tr:nth-child(even) { background: #fbfcfe; }
 
 /* 所见 V2 Docs 对应 */
-.container.md-docs.wysiwyg-v2 .ProseMirror pre { background: #fafcff; border: 1px solid #e4e9f2; border-radius: var(--radius-md); --code-pre-pad-y: 18px; padding: var(--code-pre-pad-y) 18px; }
+.container.md-docs.wysiwyg-v2 .ProseMirror pre { background: #fafcff; border: none; border-radius: var(--radius-md); --code-pre-pad-y: 18px; padding: var(--code-pre-pad-y) 18px; }
 .container.md-docs.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #f2f4f8; border: 1px solid #e4e9f2; border-radius: var(--radius-sm); }
 .container.md-docs.wysiwyg-v2 .ProseMirror th,
 .container.md-docs.wysiwyg-v2 .ProseMirror td { border: 1px solid #e4e9f2; }
@@ -3213,7 +3213,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
   body:not(.light-mode) .container.md-docs .preview th { background: #141922; }
   body:not(.light-mode) .container.md-docs { --c-key: #93c5fd; --c-str: #5eead4; --c-num: #fdba74; --c-fn: #d8b4fe; --c-com: #9ca3af; }
 
-  body:not(.light-mode) .container.md-docs.wysiwyg-v2 .ProseMirror pre { background: #0f1217; border-color: #202733; }
+  body:not(.light-mode) .container.md-docs.wysiwyg-v2 .ProseMirror pre { background: #0f1217; border: none; }
   body:not(.light-mode) .container.md-docs.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #12161c; border-color: #202733; }
   body:not(.light-mode) .container.md-docs.wysiwyg-v2 .ProseMirror th,
   body:not(.light-mode) .container.md-docs.wysiwyg-v2 .ProseMirror td { border-color: #202733; }
@@ -3338,7 +3338,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .container.md-minimalist.wysiwyg-v2 .ProseMirror a { color: #4a5568; text-decoration-color: #cbd5e0; }
 
 /* 所见 V2 映射（卡片风、终端风） */
-.container.md-card.wysiwyg-v2 .ProseMirror pre { background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: var(--radius-xl); box-shadow: 0 4px 14px rgba(0,0,0,0.08); --code-pre-pad-y: 18px; padding: var(--code-pre-pad-y) 20px; }
+.container.md-card.wysiwyg-v2 .ProseMirror pre { background: #ffffff; border: none; border-radius: var(--radius-xl); box-shadow: 0 4px 14px rgba(0,0,0,0.08); --code-pre-pad-y: 18px; padding: var(--code-pre-pad-y) 20px; }
 .container.md-card.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #f7f7f7; border: 1px solid rgba(0,0,0,0.08); border-radius: var(--radius-md); }
 .container.md-card.wysiwyg-v2 .ProseMirror table { border: 1px solid rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; }
 .container.md-card.wysiwyg-v2 .ProseMirror th,
@@ -3374,7 +3374,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 .container.md-bear.wysiwyg-v2 .ProseMirror h1 { color: #e53935; }
 .container.md-bear.wysiwyg-v2 .ProseMirror h2 { color: #d32f2f; }
 .container.md-bear.wysiwyg-v2 .ProseMirror h3 { color: #c62828; }
-.container.md-bear.wysiwyg-v2 .ProseMirror pre { background: #fafafa; border: 1px solid #f0f0f0; border-radius: var(--radius-lg); }
+.container.md-bear.wysiwyg-v2 .ProseMirror pre { background: #fafafa; border: none; border-radius: var(--radius-lg); }
 .container.md-bear.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #fff3e0; border: none; color: #e65100; }
 .container.md-bear.wysiwyg-v2 .ProseMirror blockquote { border-left: 3px solid #e53935; background: rgba(229, 57, 53, 0.04); }
 .container.md-bear.wysiwyg-v2 .ProseMirror th,
@@ -3396,7 +3396,7 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
 
   /* 终端风（已移除） */
 
-  body:not(.light-mode) .container.md-card.wysiwyg-v2 .ProseMirror pre { background: #0f1114; border-color: #262a33; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+  body:not(.light-mode) .container.md-card.wysiwyg-v2 .ProseMirror pre { background: #0f1114; border: none; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
   body:not(.light-mode) .container.md-card.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #13161a; border-color: #262a33; }
   body:not(.light-mode) .container.md-terminal.wysiwyg-v2 .ProseMirror pre {}
   body:not(.light-mode) .container.md-terminal.wysiwyg-v2 .ProseMirror :not(pre) > code {}
@@ -3424,11 +3424,11 @@ body.focus-mode .lib-float-toggle.show { display: flex; }
   body:not(.light-mode) .container.md-journal:not(.wysiwyg):not(.wysiwyg-v2) .preview pre { background: #141210; border-color: #3a332a; }
   body:not(.light-mode) .container.md-journal:not(.wysiwyg):not(.wysiwyg-v2) .preview :not(pre) > code { background: #17130f; border-color: #3a332a; }
 
-  body:not(.light-mode) .container.md-github.wysiwyg-v2 .ProseMirror pre { background: #0d1117; border-color: #30363d; }
+  body:not(.light-mode) .container.md-github.wysiwyg-v2 .ProseMirror pre { background: #0d1117; border: none; }
   body:not(.light-mode) .container.md-github.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #161b22; border-color: #30363d; color: #c9d1d9; }
-  body:not(.light-mode) .container.md-notion.wysiwyg-v2 .ProseMirror pre { background: #1c1c1a; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+  body:not(.light-mode) .container.md-notion.wysiwyg-v2 .ProseMirror pre { background: #1c1c1a; box-shadow: none; }
   body:not(.light-mode) .container.md-notion.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #1a1917; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-  body:not(.light-mode) .container.md-journal.wysiwyg-v2 .ProseMirror pre { background: #141210; border-color: #3a332a; }
+  body:not(.light-mode) .container.md-journal.wysiwyg-v2 .ProseMirror pre { background: #141210; border: none; }
   body:not(.light-mode) .container.md-journal.wysiwyg-v2 .ProseMirror :not(pre) > code { background: #17130f; border-color: #3a332a; }
 }
 
@@ -4463,8 +4463,19 @@ html, body { overflow: hidden; }
 .preview code.hljs .hljs-comment, .preview code.hljs .hljs-quote { color: var(--c-com); font-style: italic; }
 
 /* 所见模式代码块：亮色模式（VS Code Light+ 风格） */
-.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
-  background: transparent !important;
+/* 覆盖所有主题的代码块边框 */
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-github.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-notion.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-journal.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-docs.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-card.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-typora.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-obsidian.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-bear.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-minimalist.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.md-terminal.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
+  background: var(--code-bg) !important;
   border: none !important;
   padding: 12px 16px;
   margin: 0.5em 0;
@@ -4522,7 +4533,7 @@ html, body { overflow: hidden; }
 
 /* 所见模式代码块：夜间模式（VS Code Dark+ 风格） */
 body.dark-mode .container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper {
-  background: transparent !important;
+  background: var(--code-bg) !important;
   border: none !important;
   box-shadow: none !important;
 }
@@ -5775,7 +5786,7 @@ body.dark-mode .ProseMirror code {
 
 body.dark-mode .ProseMirror pre {
   background: #0f1114 !important;
-  border-color: #2d3748 !important;
+  border: none !important;
 }
 
 body.dark-mode .ProseMirror blockquote {
@@ -7649,3 +7660,16 @@ body.no-native-decorations .window-resize-handles {
   background: linear-gradient(135deg, transparent 50%, rgba(127,127,127,0.2) 50%);
 }
 */
+
+/* 所见模式代码块：强制移除所有边框和阴影（覆盖所有主题） */
+.container.wysiwyg-v2 .ProseMirror pre,
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper,
+.container.wysiwyg-v2 .ProseMirror pre.code-block-wrapper *,
+.container.wysiwyg-v2 .ProseMirror pre code,
+.container.wysiwyg-v2 .ProseMirror pre .code-layers,
+.container.wysiwyg-v2 .ProseMirror pre .highlight-layer,
+.container.wysiwyg-v2 .ProseMirror pre .editable-layer {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}

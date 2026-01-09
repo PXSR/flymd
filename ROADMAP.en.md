@@ -2,6 +2,10 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v1.0.2
+- Fixed: PDF export could crop or miss images when using image hosting
+- Improved: WYSIWYG code blocks now have a background; refined code area styling
+
 ## Update v1.0.1
 - Fixed: When printing documents containing KaTeX, wait for CSS to load to prevent formula styling loss
 - Added: Outline layout button

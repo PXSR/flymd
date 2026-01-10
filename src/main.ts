@@ -52,9 +52,10 @@ import { initPlatformIntegration, mobileSaveFile, isMobilePlatform } from './pla
 import { createImageUploader } from './core/imageUpload'
 import { createPluginMarket, compareInstallableItems, FALLBACK_INSTALLABLES } from './extensions/market'
 import type { InstallableItem } from './extensions/market'
-import { listDirOnce, listAllFiles, type LibEntry } from './core/libraryFs'
+import { listDirOnce } from './core/libraryFs'
 import { normSep, isInside, ensureDir, moveFileSafe, renameFileSafe, normalizePath, readTextFileAnySafe, writeTextFileAnySafe } from './core/fsSafe'
 import { getLibrarySort, setLibrarySort, type LibSortMode } from './core/librarySort'
+import { createQuickSearch } from './ui/quickSearch'
 import { createCustomTitleBar, removeCustomTitleBar, applyWindowDecorationsCore } from './modes/focusMode'
 import {
   toggleFocusMode,
@@ -6669,110 +6670,17 @@ async function refreshLibraryUiAndTree(refreshTree = true) {
 }
 
 // 快速文件搜索（Quick Switcher）
-let _quickSearchPanel: HTMLDivElement | null = null
-let _quickSearchInput: HTMLInputElement | null = null
-let _quickSearchResults: HTMLDivElement | null = null
-let _quickSearchFiles: LibEntry[] = []
-let _quickSearchSelected = 0
-
-async function showQuickSearch() {
-  // 创建面板（如果不存在）
-  if (!_quickSearchPanel) {
-    _quickSearchPanel = document.createElement('div')
-    _quickSearchPanel.className = 'quick-search-overlay'
-    _quickSearchPanel.innerHTML = `
-      <div class="quick-search-dialog">
-        <input type="text" class="quick-search-input" placeholder="搜索文件..." />
-        <div class="quick-search-results"></div>
-      </div>
-    `
-    document.body.appendChild(_quickSearchPanel)
-    _quickSearchInput = _quickSearchPanel.querySelector('.quick-search-input') as HTMLInputElement
-    _quickSearchResults = _quickSearchPanel.querySelector('.quick-search-results') as HTMLDivElement
-
-    // 点击遮罩关闭
-    _quickSearchPanel.addEventListener('click', (e) => {
-      if (e.target === _quickSearchPanel) hideQuickSearch()
-    })
-
-    // 输入过滤
-    _quickSearchInput?.addEventListener('input', () => {
-      _quickSearchSelected = 0
-      renderQuickSearchResults()
-    })
-
-    // 键盘导航
-    _quickSearchInput?.addEventListener('keydown', (e) => {
-      const items = _quickSearchResults?.querySelectorAll('.quick-search-item') || []
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        _quickSearchSelected = Math.min(_quickSearchSelected + 1, items.length - 1)
-        renderQuickSearchResults()
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        _quickSearchSelected = Math.max(_quickSearchSelected - 1, 0)
-        renderQuickSearchResults()
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        const selected = items[_quickSearchSelected] as HTMLElement
-        if (selected) selected.click()
-      } else if (e.key === 'Escape') {
-        hideQuickSearch()
-      }
-    })
-  }
-
-  // 先显示面板，再异步加载文件
-  _quickSearchFiles = []
-  _quickSearchSelected = 0
-  if (_quickSearchInput) _quickSearchInput.value = ''
-  if (_quickSearchResults) _quickSearchResults.innerHTML = '<div class="quick-search-loading">加载中...</div>'
-  _quickSearchPanel.classList.add('show')
-  setTimeout(() => _quickSearchInput?.focus(), 50)
-
-  // 异步加载文件列表
-  const root = await getLibraryRoot()
-  if (!root) { hideQuickSearch(); showError('请先选择库目录'); return }
-  _quickSearchFiles = await listAllFiles(root)
-  renderQuickSearchResults()
-}
-
-function hideQuickSearch() {
-  _quickSearchPanel?.classList.remove('show')
-}
-
-function renderQuickSearchResults() {
-  if (!_quickSearchResults || !_quickSearchInput) return
-  const query = _quickSearchInput.value.toLowerCase().trim()
-  const root = _quickSearchFiles.length > 0 ? (_quickSearchFiles[0].path.split(/[\\/]/).slice(0, -1).join('/') + '/').replace(/\\/g, '/') : ''
-
-  // 过滤匹配的文件
-  let filtered = _quickSearchFiles
-  if (query) {
-    filtered = _quickSearchFiles.filter(f => f.name.toLowerCase().includes(query) || f.path.toLowerCase().includes(query))
-  }
-  filtered = filtered.slice(0, 20) // 最多显示 20 个
-
-  _quickSearchResults.innerHTML = filtered.map((f, i) => {
-    const relPath = f.path.replace(/\\/g, '/').replace(root, '')
-    const selected = i === _quickSearchSelected ? 'selected' : ''
-    return `<div class="quick-search-item ${selected}" data-path="${f.path.replace(/"/g, '&quot;')}">
-      <span class="quick-search-name">${f.name}</span>
-      <span class="quick-search-path">${relPath}</span>
-    </div>`
-  }).join('')
-
-  // 绑定点击事件
-  _quickSearchResults.querySelectorAll('.quick-search-item').forEach(el => {
-    el.addEventListener('click', async () => {
-      const path = (el as HTMLElement).dataset.path
-      if (path) {
-        hideQuickSearch()
-        await openFile2(path)
-      }
-    })
-  })
-}
+const _quickSearch = createQuickSearch({
+  getLibraryRoot: async () => {
+    try { return await getLibraryRoot() } catch { return null }
+  },
+  openFile: async (p: string) => { await openFile2(p) },
+  showError: (msg: string, err?: any) => showError(msg, err),
+  getPluginAPI: (ns: string) => {
+    try { return pluginHost.getPluginAPI(ns) } catch { return null }
+  },
+})
+async function showQuickSearch() { await _quickSearch.show() }
 
 // 库选择菜单：列出已保存库、切换/新增/重命名/删除
 async function showLibraryMenu() {

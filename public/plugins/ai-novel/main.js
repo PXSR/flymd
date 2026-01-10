@@ -48,12 +48,12 @@ const DEFAULT_CFG = {
   ctx: {
     // 上游模型的上下文窗口（字符，不是 token；会有误差，但足够实用）
     modelContextChars: 32000,
-    maxPrevChars: 8000,
-    maxProgressChars: 10000,
-    maxBibleChars: 10000,
+    maxPrevChars: 12000,
+    maxProgressChars: 12000,
+    maxBibleChars: 14000,
     // 人物风格（08_人物风格.md）注入上限（字符）
     maxStyleChars: 5000,
-    // “更新进度脉络”用于生成提议的源文本上限（字符）
+    // "更新进度脉络"用于生成提议的源文本上限（字符）
     maxUpdateSourceChars: 20000
   },
   rag: {
@@ -75,22 +75,26 @@ const DEFAULT_CFG = {
       volume: true,
       // 最近窗口子索引：围绕当前章节向前取 N 章（不含当前章，避免把草稿/当前文档塞回上下文）
       recentWindow: true,
-      recentWindowChapters: 20,
-      // 融合权重：相似度 * 权重
+      recentWindowChapters: 30,
+      // 融合权重：相似度 * 权重（提高全局权重，改善早期设定记忆）
       weightRecent: 1.0,
-      weightVolume: 0.85,
-      weightTotal: 0.45,
+      weightVolume: 0.90,
+      weightTotal: 0.65,
       // 每个范围的最低命中数（满足下限后，再按总分补到 topK）
       minRecent: 2,
       minVolume: 2,
-      minTotal: 1,
+      minTotal: 2,
     },
     // 自动更新进度脉络：仅在“开始下一章/新开卷”时基于上一章触发（避免草稿片段/未采用内容污染进度）
     autoUpdateProgress: true
   },
   constraints: {
     // 全局硬约束：每次请求都会作为 input.constraints 传给后端，进入 system
-    global: ''
+    global: '',
+    // 创意豁免模式：放宽人物状态约束，允许有理有据地发展变化
+    creativeExemption: false,
+    // 严格人物状态约束：true=必须保持一致，false=作为参考（默认严格）
+    strictCharState: true
   },
   agent: {
     // Agent（Plan/TODO）模式：把一次写作拆成多轮执行，提高上限与一致性（代价：更耗字符/更慢）
@@ -677,12 +681,48 @@ function sliceTail(s, maxChars) {
   return str.slice(str.length - m)
 }
 
-function sliceHeadTail(s, maxChars, headRatio) {
+function sliceHeadTail(s, maxChars, headRatio, opts) {
   const str = String(s || '')
   const m = Math.max(0, maxChars | 0)
   if (!m || str.length <= m) return str
   const r = Math.min(0.8, Math.max(0.2, Number(headRatio || 0.45) || 0.45))
+  const o = opts && typeof opts === 'object' ? opts : {}
   const sep = '\n\n……（中间省略）……\n\n'
+
+  // 智能分割：尝试在段落边界（\n\n）处分割，避免截断关键内容
+  if (o.smartSplit !== false && str.length > m * 1.2) {
+    const headTarget = Math.floor((m - sep.length) * r)
+    const tailTarget = Math.floor((m - sep.length) * (1 - r))
+
+    // 寻找头部附近的段落边界
+    let headEnd = headTarget
+    const headSearchStart = Math.max(0, headTarget - 300)
+    const headSearchEnd = Math.min(str.length, headTarget + 100)
+    const headSearchRange = str.slice(headSearchStart, headSearchEnd)
+    const headParaIdx = headSearchRange.lastIndexOf('\n\n')
+    if (headParaIdx > 0) {
+      headEnd = headSearchStart + headParaIdx + 2
+    }
+
+    // 寻找尾部附近的段落边界
+    let tailStart = str.length - tailTarget
+    const tailSearchStart = Math.max(0, tailStart - 100)
+    const tailSearchEnd = Math.min(str.length, tailStart + 300)
+    const tailSearchRange = str.slice(tailSearchStart, tailSearchEnd)
+    const tailParaIdx = tailSearchRange.indexOf('\n\n')
+    if (tailParaIdx >= 0) {
+      tailStart = tailSearchStart + tailParaIdx + 2
+    }
+
+    // 检查智能分割是否有效（分割后总长度不超预算）
+    const smartHead = str.slice(0, headEnd)
+    const smartTail = str.slice(tailStart)
+    if (smartHead.length + sep.length + smartTail.length <= m && headEnd < tailStart) {
+      return smartHead + sep + smartTail
+    }
+  }
+
+  // 回退到原有逻辑
   const headLen = Math.max(1, Math.floor((m - sep.length) * r))
   const tailLen = Math.max(1, (m - sep.length) - headLen)
   const head = str.slice(0, headLen)
@@ -1483,10 +1523,36 @@ async function getCharStateConstraintsText(ctx, cfg) {
   try {
     const block = await getCharStateBlockForContext(ctx, cfg)
     if (!block) return ''
+
+    // 根据配置选择约束规则文本
+    const creativeMode = !!(cfg && cfg.constraints && cfg.constraints.creativeExemption)
+    const strictMode = !(cfg && cfg.constraints && cfg.constraints.strictCharState === false)
+
+    let ruleText
+    if (creativeMode) {
+      // 创意豁免模式：允许有理有据地发展变化
+      ruleText = t(
+        '规则：以上作为参考依据。允许有理有据地发展变化，但需在剧情中自然呈现转变过程。',
+        'Rule: Above as reference. Changes allowed if justified and naturally presented in story.'
+      )
+    } else if (strictMode) {
+      // 严格模式（默认）：必须保持一致
+      ruleText = t(
+        '规则：以上是"已发生的事实"。续写必须保持一致；若要改变，必须在剧情中给出原因与过程。',
+        'Rule: The above are established facts. Keep consistency; if changed, justify it in-story.'
+      )
+    } else {
+      // 宽松模式：作为参考，大幅改变需有铺垫
+      ruleText = t(
+        '规则：以上供参考，可灵活处理，但大幅改变需有铺垫。',
+        'Rule: Above for reference. Major changes need setup.'
+      )
+    }
+
     return [
       t('【人物状态（自动注入）】', '[Character states (auto)]'),
       block,
-      t('规则：以上是“已发生的事实”。续写必须保持一致；若要改变，必须在剧情中给出原因与过程。', 'Rule: The above are established facts. Keep consistency; if changed, justify it in-story.')
+      ruleText
     ].join('\n')
   } catch {
     return ''
@@ -3882,6 +3948,57 @@ async function openSettingsDialog(ctx) {
   const hard = mkTextarea(t('全局硬约束（可空）', 'Global hard constraints (optional)'), getGlobalConstraints(cfg))
   secCtx.appendChild(hard.wrap)
 
+  // 约束灵活性配置
+  const rowConstraintMode = document.createElement('div')
+  rowConstraintMode.style.display = 'flex'
+  rowConstraintMode.style.flexWrap = 'wrap'
+  rowConstraintMode.style.gap = '16px'
+  rowConstraintMode.style.marginTop = '8px'
+
+  const lblCreative = document.createElement('label')
+  lblCreative.style.display = 'flex'
+  lblCreative.style.gap = '6px'
+  lblCreative.style.alignItems = 'center'
+  lblCreative.style.cursor = 'pointer'
+  lblCreative.title = t(
+    '启用后，人物状态约束变为"参考依据"，允许有理有据地发展变化',
+    'When enabled, character state constraints become reference-based, allowing justified changes'
+  )
+  const cbCreativeExemption = document.createElement('input')
+  cbCreativeExemption.type = 'checkbox'
+  cbCreativeExemption.checked = !!(cfg && cfg.constraints && cfg.constraints.creativeExemption)
+  lblCreative.appendChild(cbCreativeExemption)
+  lblCreative.appendChild(document.createTextNode(t('创意豁免模式', 'Creative exemption')))
+  rowConstraintMode.appendChild(lblCreative)
+
+  const lblStrict = document.createElement('label')
+  lblStrict.style.display = 'flex'
+  lblStrict.style.gap = '6px'
+  lblStrict.style.alignItems = 'center'
+  lblStrict.style.cursor = 'pointer'
+  lblStrict.title = t(
+    '启用后，人物状态必须保持一致；关闭则作为参考，可灵活处理',
+    'When enabled, character states must stay consistent; when off, treated as reference'
+  )
+  const cbStrictCharState = document.createElement('input')
+  cbStrictCharState.type = 'checkbox'
+  cbStrictCharState.checked = !(cfg && cfg.constraints && cfg.constraints.strictCharState === false)
+  lblStrict.appendChild(cbStrictCharState)
+  lblStrict.appendChild(document.createTextNode(t('严格人物状态', 'Strict char state')))
+  rowConstraintMode.appendChild(lblStrict)
+
+  const constraintModeHint = document.createElement('div')
+  constraintModeHint.className = 'ain-muted'
+  constraintModeHint.style.fontSize = '12px'
+  constraintModeHint.style.marginTop = '4px'
+  constraintModeHint.textContent = t(
+    '说明：创意豁免 > 严格模式。创意豁免开启时忽略严格设置。',
+    'Note: Creative exemption overrides strict mode when enabled.'
+  )
+
+  secCtx.appendChild(rowConstraintMode)
+  secCtx.appendChild(constraintModeHint)
+
   function applyCtxPreset(totalChars) {
     const total = _clampInt(totalChars, 8000, 10000000)
     inpWindow.inp.value = String(total)
@@ -4329,9 +4446,21 @@ async function openSettingsDialog(ctx) {
 
   const secSave = document.createElement('div')
   secSave.className = 'ain-card'
+  secSave.style.display = 'flex'
+  secSave.style.alignItems = 'center'
+  secSave.style.gap = '12px'
   const btnSave = document.createElement('button')
   btnSave.className = 'ain-btn'
   btnSave.textContent = t('保存设置', 'Save')
+
+  // 保存成功提示标签
+  const saveHint = document.createElement('span')
+  saveHint.style.color = '#4ade80'
+  saveHint.style.fontSize = '14px'
+  saveHint.style.opacity = '0'
+  saveHint.style.transition = 'opacity 0.3s'
+  saveHint.textContent = t('✓ 保存成功', '✓ Saved')
+
   btnSave.onclick = async () => {
     try {
       const patch = {
@@ -4366,7 +4495,9 @@ async function openSettingsDialog(ctx) {
           maxUpdateSourceChars: _clampInt(inpUpdChars.inp.value, 1000, 10000000),
         },
         constraints: {
-          global: safeText(hard.ta.value).trim()
+          global: safeText(hard.ta.value).trim(),
+          creativeExemption: !!cbCreativeExemption.checked,
+          strictCharState: !!cbStrictCharState.checked
         },
         agent: {
           enabled: !!cbAgent.checked,
@@ -4380,11 +4511,15 @@ async function openSettingsDialog(ctx) {
       }
       cfg = await saveCfg(ctx, patch)
       ctx.ui.notice(t('已保存', 'Saved'), 'ok', 1400)
+      // 显示保存成功提示
+      saveHint.style.opacity = '1'
+      setTimeout(() => { saveHint.style.opacity = '0' }, 2000)
     } catch (e) {
       ctx.ui.notice(t('保存失败：', 'Save failed: ') + (e && e.message ? e.message : String(e)), 'err', 2200)
     }
   }
   secSave.appendChild(btnSave)
+  secSave.appendChild(saveHint)
 
   body.appendChild(secBackend)
   body.appendChild(secUp)
@@ -8782,10 +8917,29 @@ function _ainTypesetWebNovelText(text, maxSentencesPerPara) {
   let buf = []
   let inFence = false
 
+  // 检测是否为对话段落（以中英文引号开头并结尾）
+  function isDialoguePara(s) {
+    const t = String(s || '').trim()
+    return /^["「『"']/.test(t) && /["」』"']$/.test(t)
+  }
+
+  // 检测是否以对话引号开头（用于保护对话行）
+  function startsWithQuote(s) {
+    return /^["「『"']/.test(String(s || '').trim())
+  }
+
   function flush() {
     const raw = buf.join('').trim()
     buf = []
     if (!raw) return
+
+    // 如果整段是对话（引号开头+结尾），整体保留不拆分
+    if (isDialoguePara(raw)) {
+      out.push(raw)
+      out.push('')
+      return
+    }
+
     const sents = _ainTypesetSplitSentences(raw)
     const arr = sents && sents.length ? sents : [raw]
     for (let i = 0; i < arr.length; i += maxN) {
@@ -8801,7 +8955,7 @@ function _ainTypesetWebNovelText(text, maxSentencesPerPara) {
     const line = lineRaw.replace(/\s+$/g, '')
     const trim = line.trim()
 
-    // 保留代码围栏/结构化 Markdown，避免“提行”破坏结构
+    // 保留代码围栏/结构化 Markdown，避免"提行"破坏结构
     if (/^```/.test(trim)) {
       flush()
       out.push(line)
@@ -8820,6 +8974,17 @@ function _ainTypesetWebNovelText(text, maxSentencesPerPara) {
     if (/^(#{1,6})\s+/.test(trim) || /^[-*]\s+/.test(trim) || /^>\s*/.test(trim)) {
       flush()
       out.push(line)
+      continue
+    }
+
+    // 对话行保护：以引号开头的行单独成段，不与其他内容合并
+    if (startsWithQuote(trim) && buf.length > 0) {
+      flush()
+    }
+    if (startsWithQuote(trim) && isDialoguePara(trim)) {
+      // 完整对话行，直接输出
+      out.push(trim)
+      out.push('')
       continue
     }
 
@@ -9011,24 +9176,37 @@ function _ainCtxApplyBudget(cfg, input, opt) {
     used -= Math.max(0, before - after)
   }
 
+  // 设定保护：为 progress 和 bible 预留最低预算（字符），避免被完全挤掉导致遗忘设定
+  const MIN_PROGRESS_RESERVE = 4000
+  const MIN_BIBLE_RESERVE = 4000
+
   // rag：允许直接清空
   if (used > eff && out.rag) {
     const keep = Math.max(0, _ainRagChars(out.rag) - (used - eff))
     applyTrim('rag', _ainRagPruneToChars(out.rag, keep))
   }
-  // prev
+  // prev：裁剪时考虑为 bible/progress 预留空间
   if (used > eff && out.prev) {
-    const keep = Math.max(0, safeText(out.prev).length - (used - eff))
+    const bibleLen = safeText(out.bible).length
+    const progressLen = safeText(out.progress).length
+    const bibleReserve = Math.min(bibleLen, MIN_BIBLE_RESERVE)
+    const progressReserve = Math.min(progressLen, MIN_PROGRESS_RESERVE)
+    const excess = used - eff
+    const keep = Math.max(0, safeText(out.prev).length - excess - bibleReserve - progressReserve)
     applyTrim('prev', trimTextByStrategy(out.prev, keep, 'tail'))
   }
-  // bible
+  // bible：保留最低预算
   if (used > eff && out.bible) {
-    const keep = Math.max(0, safeText(out.bible).length - (used - eff))
+    const bibleLen = safeText(out.bible).length
+    const minKeep = Math.min(bibleLen, MIN_BIBLE_RESERVE)
+    const keep = Math.max(minKeep, bibleLen - (used - eff))
     applyTrim('bible', trimTextByStrategy(out.bible, keep, 'headTail'))
   }
-  // progress
+  // progress：保留最低预算
   if (used > eff && out.progress) {
-    const keep = Math.max(0, safeText(out.progress).length - (used - eff))
+    const progressLen = safeText(out.progress).length
+    const minKeep = Math.min(progressLen, MIN_PROGRESS_RESERVE)
+    const keep = Math.max(minKeep, progressLen - (used - eff))
     applyTrim('progress', trimTextByStrategy(out.progress, keep, 'tail'))
   }
   // constraints：最后才动（你说它不大，通常不会走到这一步）
@@ -10909,6 +11087,17 @@ async function openBootstrapDialog(ctx) {
     projectTitle = safeText(titleIn.ta.value).trim()
     try {
       const constraints = mergeConstraints(cfg, '')
+
+      // 为 options 获取上下文，让走向候选更贴合当前剧情
+      let optProgress = ''
+      let optBible = ''
+      let optPrev = ''
+      let optRag = null
+      try { optProgress = await getProgressDocText(ctx, cfg) } catch {}
+      try { optBible = await getBibleDocText(ctx, cfg) } catch {}
+      try { optPrev = sliceTail(await getPrevTextForRequest(ctx, cfg), 4000) } catch {}
+      try { optRag = await rag_get_hits(ctx, cfg, promptIdea) } catch {}
+
       const opt = await apiFetch(ctx, cfg, 'ai/proxy/chat/', {
         mode: 'novel',
         action: 'options',
@@ -10917,7 +11106,14 @@ async function openBootstrapDialog(ctx) {
           apiKey: cfg.upstream.apiKey,
           model: cfg.upstream.model
         },
-        input: { instruction: promptIdea, progress: '', bible: '', prev: '', constraints: constraints || undefined }
+        input: {
+          instruction: promptIdea,
+          progress: optProgress || '',
+          bible: optBible || '',
+          prev: optPrev || '',
+          rag: optRag || null,
+          constraints: constraints || undefined
+        }
       })
       const arr = Array.isArray(opt && opt.data) ? opt.data : null
       const chosen = (arr && arr.length) ? arr[0] : { title: '自动', one_line: '自动走向', conflict: '', characters: [], foreshadow: '', risks: '' }
@@ -13280,7 +13476,7 @@ async function callNovelRevise(ctx, cfg, baseText, instruction, localConstraints
   const input0 = {
     instruction: inst,
     text,
-    history: Array.isArray(history) ? history.slice(-10) : undefined,
+    history: Array.isArray(history) ? history.slice(-20) : undefined,
     progress,
     bible,
     prev,
@@ -13565,7 +13761,7 @@ async function openDraftReviewDialog(ctx, opts) {
       setBusy(btnSend, true)
       outBusy()
       // 只带“用户修改要求”历史：草稿正文已经在 curText 里，再把 AI 全文塞进历史只会重复、膨胀、降低命中率。
-      const hist = history.slice(-10).map((x) => ({ user: x.user, assistant: '' }))
+      const hist = history.slice(-20).map((x) => ({ user: x.user, assistant: '' }))
       const res = await callNovelRevise(ctx, cfg, curText, ask, safeText(taCons.ta.value).trim(), hist)
       const json = res && res.json ? res.json : res
       const next = safeText(json && json.text).trim()

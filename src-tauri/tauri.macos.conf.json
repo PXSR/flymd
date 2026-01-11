@@ -12,6 +12,7 @@
         "decorations": false,
         "visible": false,
         "transparent": true,
+        "backgroundColor": "#00000000",
         "shadow": false,
         "devtools": true,
         "dragDropEnabled": true

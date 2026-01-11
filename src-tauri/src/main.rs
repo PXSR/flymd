@@ -38,24 +38,27 @@ fn linux_transparency_supported() -> bool {
   }
 
   // X11：检查是否存在合成管理器（_NET_WM_CM_S{screen} selection owner）
-  use x11rb::connection::Connection;
+  use x11rb::protocol::xproto::ConnectionExt;
   use x11rb::rust_connection::RustConnection;
-  let Ok((conn, screen_num)) = RustConnection::connect(None) else {
-    return false;
-  };
+  let Ok((conn, screen_num)) = RustConnection::connect(None) else { return false; };
+
   let atom_name = format!("_NET_WM_CM_S{screen_num}");
-  let Ok(cookie) = conn.intern_atom(false, atom_name.as_bytes()) else {
-    return false;
+  let atom_reply = match conn
+    .intern_atom(false, atom_name.as_bytes())
+    .and_then(|c| c.reply())
+  {
+    Ok(r) => r,
+    Err(_) => return false,
   };
-  let Ok(reply) = cookie.reply() else {
-    return false;
+
+  let owner_reply = match conn
+    .get_selection_owner(atom_reply.atom)
+    .and_then(|c| c.reply())
+  {
+    Ok(r) => r,
+    Err(_) => return false,
   };
-  let Ok(owner) = conn.get_selection_owner(reply.atom) else {
-    return false;
-  };
-  let Ok(owner_reply) = owner.reply() else {
-    return false;
-  };
+
   owner_reply.owner != 0
 }
 

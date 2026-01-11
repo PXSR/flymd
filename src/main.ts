@@ -1258,9 +1258,9 @@ app.innerHTML = `
       <div class="tabbar-placeholder" id="tabbar-placeholder"></div>
       <div class="filename" id="filename">${t('filename.untitled')}</div>
       <div class="window-controls" id="window-controls">
-        <button class="window-btn window-minimize" id="window-minimize" title="最小化">-</button>
-        <button class="window-btn window-maximize" id="window-maximize" title="最大化">+</button>
-        <button class="window-btn window-close" id="window-close" title="关闭">x</button>
+        <button class="window-btn window-minimize" id="window-minimize" title="最小化"><svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg></button>
+        <button class="window-btn window-maximize" id="window-maximize" title="最大化"><svg viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" stroke="currentColor" stroke-width="1" fill="none"/></svg></button>
+        <button class="window-btn window-close" id="window-close" title="关闭"><svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1"/></svg></button>
       </div>
     </div>
     <div class="focus-trigger-zone" id="focus-trigger-zone"></div>

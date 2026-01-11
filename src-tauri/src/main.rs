@@ -1893,7 +1893,7 @@ async fn run_installer(_path: String) -> Result<(), String> {
         "-Command",
         "Start-Process",
         "-FilePath",
-        &path,
+        &_path,
         "-Verb",
         "runas",
       ])

@@ -2,6 +2,12 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v1.1.1
+- Improved: Tuned Windows rounded corners/shadows/transparent padding for clearer borders
+- Improved: Updated window control buttons to Win10/11-style SVG icons, with clearer maximize/restore state switching
+- Fixed: Window control buttons could become invisible when tabs were squeezed
+- Changed: Updated refresh/update icon and theme button icon styling
+
 ## Update v1.0.4
 - Added: “Update now” button in extension update notifications, one-click updates with progress display
 - Improved: Preserve extension install options when updating (e.g. “Show in menu bar”) to avoid behavior changes after update

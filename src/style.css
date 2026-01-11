@@ -97,8 +97,8 @@
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
   }
   body.platform-windows #app {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25),
-                0 0 1px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45),
+                0 1px 1px rgba(0, 0, 0, 0.65);
   }
 }
 
@@ -153,13 +153,13 @@ body {
 /* Windows：保持 1.0.4 的透明窗口 + 圆角阴影；Mac/Linux 回退到 673c 之前的纯色窗口 */
 body.platform-windows {
   background: transparent;
-  padding: 12px; /* 为窗口阴影留出空间 */
+  padding: 2px; /* 透明边越小越好：只留出足够的圆角/轻微阴影空间 */
   box-sizing: border-box;
 }
 body.platform-windows #app {
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08),
-              0 4px 16px rgba(0, 0, 0, 0.12),
-              0 2px 6px rgba(0, 0, 0, 0.08);
+  /* 阴影必须“收敛”到 padding 里，否则就是被裁剪或者被迫加大透明边 */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12),
+              0 1px 1px rgba(0, 0, 0, 0.16);
   border-radius: 8px;
 }
 
@@ -5694,8 +5694,8 @@ body.dark-mode {
 }
 
 body.platform-windows.dark-mode #app {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25),
-              0 0 1px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45),
+              0 1px 1px rgba(0, 0, 0, 0.65);
 }
 
 /* 夜间模式 - 标题栏和菜单 */

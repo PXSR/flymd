@@ -198,10 +198,34 @@
                 "**"
               ]
             },
-            "http:allow-fetch",
-            "http:allow-fetch-cancel",
-            "http:allow-fetch-read-body",
-            "http:allow-fetch-send"
+            {
+              "identifier": "http:allow-fetch",
+              "allow": [
+                { "url": "https://**" },
+                { "url": "http://**" }
+              ]
+            },
+            {
+              "identifier": "http:allow-fetch-cancel",
+              "allow": [
+                { "url": "https://**" },
+                { "url": "http://**" }
+              ]
+            },
+            {
+              "identifier": "http:allow-fetch-read-body",
+              "allow": [
+                { "url": "https://**" },
+                { "url": "http://**" }
+              ]
+            },
+            {
+              "identifier": "http:allow-fetch-send",
+              "allow": [
+                { "url": "https://**" },
+                { "url": "http://**" }
+              ]
+            }
           ]
         }
       ]

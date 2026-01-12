@@ -2423,7 +2423,7 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
       <div class="lib-actions">
         <button class="lib-action-btn lib-icon-btn active" id="lib-tab-files" title="${t('tab.files')}">${ribbonIcons.layers}</button>
         <button class="lib-action-btn lib-icon-btn" id="lib-tab-outline" title="${t('tab.outline')}">${ribbonIcons.list}</button>
-        <button class="lib-action-btn lib-icon-btn" id="lib-layout" title="${t('outline.layout')}">${ribbonIcons.columns}</button>
+        <button class="lib-action-btn lib-icon-btn" id="lib-layout" title="${t('outline.layout')}">${ribbonIcons.columnsThree}</button>
         <button class="lib-action-btn lib-icon-btn" id="btn-search" title="${t('search.title')}">${ribbonIcons.search}</button>
         <button class="lib-action-btn lib-icon-btn hidden" id="lib-refresh" title="${t('lib.refresh')}">${ribbonIcons.refreshCw}</button>
         <button class="lib-action-btn lib-icon-btn" id="lib-side" title="${t('lib.side.left')}">${ribbonIcons.sidebarLeft}</button>
@@ -5458,9 +5458,9 @@ async function persistLibraryVisible() {
         })
         return item
       }
-      menu.appendChild(makeItem('嵌入侧栏', 'embedded'))
-      menu.appendChild(makeItem('剥离（库 | 大纲 | 编辑区）', 'left'))
-      menu.appendChild(makeItem('右侧（库 | 编辑区 | 大纲）', 'right'))
+      menu.appendChild(makeItem('内嵌模式', 'embedded'))
+      menu.appendChild(makeItem('独立左侧', 'left'))
+      menu.appendChild(makeItem('独立右侧', 'right'))
       const close = () => {
         try {
           document.removeEventListener('click', onDocClick, true)

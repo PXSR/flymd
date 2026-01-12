@@ -204,7 +204,16 @@
                 { "url": "https://**" },
                 { "url": "http://**" }
               ]
-            }
+            },
+            "http:allow-fetch",
+            "http:allow-fetch-cancel",
+            "http:allow-fetch-read-body",
+            "http:allow-fetch-send",
+            "http:allow-request",
+            "http:allow-request-body",
+            "http:allow-request-cancel",
+            "http:allow-request-read-body",
+            "http:allow-request-send"
           ]
         }
       ]

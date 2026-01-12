@@ -201,8 +201,7 @@
             "http:allow-fetch",
             "http:allow-fetch-cancel",
             "http:allow-fetch-read-body",
-            "http:allow-fetch-send",
-            "http:allow-fetch-write"
+            "http:allow-fetch-send"
           ]
         }
       ]

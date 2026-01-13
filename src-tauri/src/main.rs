@@ -1089,6 +1089,7 @@ async fn flymd_imgla_list_images(req: ImgLaListImagesReq) -> Result<Vec<Uploaded
 #[tauri::command]
 async fn flymd_imgla_delete_image(app: tauri::AppHandle, req: ImgLaDeleteReq) -> Result<(), String> {
   use std::fs;
+  use serde_json::Value;
 
   let base = req.base_url.trim().trim_end_matches('/').to_string();
   if base.is_empty() {
@@ -1102,24 +1103,103 @@ async fn flymd_imgla_delete_image(app: tauri::AppHandle, req: ImgLaDeleteReq) ->
     return Err("key 非法".into());
   }
 
-  let url = imgla_join(&base, &format!("/api/v1/images/{}", req.key));
   let client = reqwest::Client::builder()
     .timeout(Duration::from_secs(25))
     .build()
     .map_err(|e| format!("client error: {e}"))?;
 
-  let resp = client
-    .delete(&url)
-    .header("Accept", "application/json")
-    .bearer_auth(&token)
-    .send()
-    .await
-    .map_err(|e| format!("send error: {e}"))?;
+  // Lsky Pro+ 新旧接口并存（而且不同部署可能只支持其中一个）：
+  // - 新版（用户侧）：DELETE /api/v2/user/photos，Body 为 [id, ...]，成功通常是 204
+  // - 兼容新版（部分部署）：DELETE /api/v1/user/photos，Body 为 [id, ...]
+  // - 旧版（兼容）：DELETE /api/v1/images/{key}
+  // 现实很残酷：你只能兼容它。
+  fn parse_status_or_error(text: &str) -> Result<(), String> {
+    // Lsky/兰空常见坑：失败也可能返回 200 + { status:false, message:"..." }
+    // 另一个坑：token 失效时可能给你返回 200 + HTML（登录页/错误页），这也不能算成功。
+    let t = text.trim();
+    if t.is_empty() {
+      // 空 body：很多接口会这么干（尤其 204）
+      return Ok(());
+    }
+    let v: Value = serde_json::from_str(t).map_err(|_| {
+      // 非 JSON：十有八九是 HTML/文本错误页，别自欺欺人。
+      "响应不是 JSON（可能是 token 无效返回的 HTML）".to_string()
+    })?;
+    let ok = v.get("status").and_then(|x| x.as_bool()).unwrap_or(false);
+    if ok {
+      return Ok(());
+    }
+    let msg = v
+      .get("message")
+      .and_then(|x| x.as_str())
+      .unwrap_or("delete failed");
+    Err(msg.to_string())
+  }
 
-  let status = resp.status();
-  let text = resp.text().await.unwrap_or_default();
-  if !status.is_success() {
-    return Err(format!("HTTP {}: {}", status.as_u16(), text));
+  async fn send_delete(
+    client: &reqwest::Client,
+    token: &str,
+    url: &str,
+    body_ids: Option<Vec<u64>>,
+    expect_204_only: bool,
+  ) -> Result<(), String> {
+    let mut req = client
+      .delete(url)
+      .header("Accept", "application/json")
+      .bearer_auth(token);
+    if let Some(ids) = body_ids {
+      req = req.json(&ids);
+    }
+
+    let resp = req.send().await.map_err(|e| format!("send error: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if expect_204_only {
+      // 你给我的证据很清楚：204 才是成功。那就别瞎“成功”了。
+      if status.as_u16() != 204 {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+      }
+      return Ok(());
+    }
+
+    if status.as_u16() == 204 {
+      return Ok(());
+    }
+    if !status.is_success() {
+      return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    // 2xx 但不是 204：必须是 JSON 且 status=true，否则一律当失败，避免 200+HTML 假成功。
+    parse_status_or_error(&text)?;
+    Ok(())
+  }
+
+  let ids = vec![req.key];
+  let candidates: Vec<(String, Option<Vec<u64>>)> = vec![
+    // 新版优先：/api/v2/user/photos（204）
+    (imgla_join(&base, "/api/v2/user/photos"), Some(ids.clone())),
+    // 兼容：部分旧部署还是 v1
+    (imgla_join(&base, "/api/v1/user/photos"), Some(ids.clone())),
+    (imgla_join(&base, "/user/photos"), Some(ids.clone())),
+    // 旧版：/api/v1/images/{key}
+    (imgla_join(&base, &format!("/api/v1/images/{}", req.key)), None),
+    (imgla_join(&base, &format!("/images/{}", req.key)), None),
+  ];
+
+  let mut errs: Vec<String> = Vec::new();
+  for (url, body) in candidates {
+    let expect_204_only = url.contains("/api/v2/user/photos");
+    match send_delete(&client, &token, &url, body, expect_204_only).await {
+      Ok(()) => {
+        errs.clear();
+        break;
+      }
+      Err(e) => {
+        errs.push(format!("{url} -> {e}"));
+      }
+    }
+  }
+  if !errs.is_empty() {
+    return Err(format!("删除图片失败（已尝试多个接口）：{}", errs.join(" | ")));
   }
 
   // 同步从本地上传历史中移除（若存在）

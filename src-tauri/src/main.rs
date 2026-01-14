@@ -22,6 +22,50 @@ fn init_linux_render_env() {
   }
 }
 
+// Windows：最大化状态同步到前端。
+// 用途：最大化时禁用前端自定义 resize handles，避免“按住顶部下拉还原窗口”被误判成改高度。
+// 注意：这里不去动 resizable（会影响 Windows 的“拖拽标题栏下拉还原”行为）。
+#[cfg(target_os = "windows")]
+fn install_windows_maximized_resizable_workaround(win: &tauri::WebviewWindow) {
+  use std::sync::{Arc, Mutex};
+
+  fn sync_state(win: &tauri::WebviewWindow, last_maximized: &mut Option<bool>) {
+    let Ok(is_maximized) = win.is_maximized() else { return; };
+
+    // 首次同步：只建立基线；后续仅在状态变化时通知前端，避免刷事件。
+    if last_maximized.is_none() {
+      *last_maximized = Some(is_maximized);
+      let _ = win.emit("flymd://window-maximized-changed", is_maximized);
+      return;
+    }
+
+    if *last_maximized == Some(is_maximized) {
+      return;
+    }
+    *last_maximized = Some(is_maximized);
+    let _ = win.emit("flymd://window-maximized-changed", is_maximized);
+  }
+
+  let last_maximized = Arc::new(Mutex::new(None::<bool>));
+
+  // 先同步一次，处理“启动即最大化”但事件还没到的情况。
+  {
+    let mut guard = last_maximized.lock().unwrap_or_else(|p| p.into_inner());
+    sync_state(win, &mut guard);
+  }
+
+  // 注意：不能把用于注册回调的 `win` 同时 move 进闭包（Rust 借用规则会报 E0505）。
+  // 这里保留用 `win`（&self）注册监听，另拷贝一份句柄给闭包里用。
+  let win_for_cb = win.clone();
+  let last_maximized_for_cb = last_maximized.clone();
+  win.on_window_event(move |_event| {
+    let mut guard = last_maximized_for_cb
+      .lock()
+      .unwrap_or_else(|p| p.into_inner());
+    sync_state(&win_for_cb, &mut guard);
+  });
+}
+
 // 启动诊断日志：发布版也能落盘，便于定位“黑屏/卡初始化”等问题
 static STARTUP_LOG_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
 static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
@@ -679,6 +723,18 @@ struct ImgLaAlbum {
   image_num: Option<u64>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+struct ImgLaStrategy {
+  id: u64,
+  name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  intro: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  r#type: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  driver: Option<String>,
+}
+
 fn imgla_join(base_url: &str, path: &str) -> String {
   let b = base_url.trim().trim_end_matches('/');
   let p = path.trim().trim_start_matches('/');
@@ -689,6 +745,17 @@ fn imgla_join(base_url: &str, path: &str) -> String {
 async fn flymd_imgla_upload(req: ImgLaUploadReq) -> Result<ImgLaUploadResp, String> {
   use reqwest::multipart::{Form, Part};
   use serde_json::Value;
+
+  fn short_text(s: &str, max: usize) -> String {
+    if s.len() <= max { return s.to_string(); }
+    let mut out = String::with_capacity(max + 32);
+    for (i, ch) in s.chars().enumerate() {
+      if i >= max { break; }
+      out.push(ch);
+    }
+    out.push_str(&format!("…(len={})", s.len()));
+    out
+  }
 
   let base = req.base_url.trim().trim_end_matches('/').to_string();
   if base.is_empty() {
@@ -742,13 +809,23 @@ async fn flymd_imgla_upload(req: ImgLaUploadReq) -> Result<ImgLaUploadResp, Stri
   let status = resp.status();
   let text = resp.text().await.unwrap_or_default();
   if !status.is_success() {
-    return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    return Err(format!("HTTP {}: {}", status.as_u16(), short_text(&text, 800)));
   }
 
-  let v: Value = serde_json::from_str(&text).map_err(|e| format!("json error: {e}"))?;
+  let v: Value = serde_json::from_str(&text).map_err(|e| {
+    if cfg!(debug_assertions) {
+      format!("json error: {e}; raw={}", short_text(&text, 800))
+    } else {
+      format!("json error: {e}")
+    }
+  })?;
   let ok = v.get("status").and_then(|x| x.as_bool()).unwrap_or(false);
   if !ok {
     let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("upload failed");
+    let code = v.get("code").and_then(|x| x.as_i64()).unwrap_or(0);
+    if cfg!(debug_assertions) {
+      return Err(format!("ImgLa status=false code={} message={} raw={}", code, msg, short_text(&text, 800)));
+    }
     return Err(msg.to_string());
   }
 
@@ -837,6 +914,150 @@ async fn flymd_imgla_list_albums(req: ImgLaAuthReq) -> Result<Vec<ImgLaAlbum>, S
 }
 
 #[tauri::command]
+async fn flymd_imgla_list_strategies(req: ImgLaAuthReq) -> Result<Vec<ImgLaStrategy>, String> {
+  use serde_json::Value;
+
+  fn short_text(s: &str, max: usize) -> String {
+    if s.len() <= max { return s.to_string(); }
+    let mut out = String::with_capacity(max + 32);
+    for (i, ch) in s.chars().enumerate() {
+      if i >= max { break; }
+      out.push(ch);
+    }
+    out.push_str(&format!("…(len={})", s.len()));
+    out
+  }
+  fn v_to_u64(v: &Value) -> u64 {
+    if let Some(n) = v.as_u64() { return n; }
+    if let Some(s) = v.as_str() {
+      if let Ok(n) = s.trim().parse::<u64>() { return n; }
+    }
+    0
+  }
+  fn v_to_string(v: Option<&Value>) -> Option<String> {
+    let Some(v) = v else { return None; };
+    if let Some(s) = v.as_str() {
+      let t = s.trim();
+      if !t.is_empty() { return Some(t.to_string()); }
+    }
+    None
+  }
+  fn find_first_id_array<'a>(root: &'a Value) -> Option<&'a Vec<Value>> {
+    // 宽松兜底：有些部署返回结构不是 data/data，直接 BFS 找“像策略列表”的数组
+    let mut q: Vec<&'a Value> = Vec::new();
+    q.push(root);
+    for _ in 0..4096 {
+      let Some(cur) = q.pop() else { break; };
+      if let Some(arr) = cur.as_array() {
+        let mut ok = false;
+        for it in arr {
+          if let Some(obj) = it.as_object() {
+            if obj.contains_key("id") {
+              ok = true;
+              break;
+            }
+          }
+        }
+        if ok {
+          return Some(arr);
+        }
+        // 继续向下探测
+        for it in arr {
+          q.push(it);
+        }
+      } else if let Some(obj) = cur.as_object() {
+        for (_, v) in obj {
+          q.push(v);
+        }
+      }
+    }
+    None
+  }
+
+  let base = req.base_url.trim().trim_end_matches('/').to_string();
+  if base.is_empty() {
+    return Err("baseUrl 为空".into());
+  }
+  let token = req.token.trim().to_string();
+  if token.is_empty() {
+    return Err("token 为空".into());
+  }
+
+  let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(20))
+    .build()
+    .map_err(|e| format!("client error: {e}"))?;
+
+  let url = imgla_join(&base, "/api/v1/strategies");
+  let resp = client
+    .get(&url)
+    .header("Accept", "application/json")
+    .bearer_auth(&token)
+    .send()
+    .await
+    .map_err(|e| format!("send error: {e}"))?;
+
+  let status = resp.status();
+  let text = resp.text().await.unwrap_or_default();
+  let v: Value = serde_json::from_str(&text).map_err(|e| {
+    if cfg!(debug_assertions) {
+      format!("json error: {e}; raw={}", short_text(&text, 800))
+    } else {
+      format!("json error: {e}")
+    }
+  })?;
+  if !status.is_success() {
+    return Err(format!("HTTP {}: {}", status.as_u16(), v));
+  }
+  let ok = v.get("status").and_then(|x| x.as_bool()).unwrap_or(false);
+  if !ok {
+    let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("list strategies failed");
+    return Err(msg.to_string());
+  }
+
+  // 兼容两种结构：data: [] 或 data: { data: [] }
+  let data = v.get("data").cloned().unwrap_or(Value::Null);
+  let arr: Vec<Value> = if let Some(a) = data.as_array() {
+    a.clone()
+  } else if let Some(a) = data.get("data").and_then(|x| x.as_array()) {
+    a.clone()
+  } else if let Some(a) = find_first_id_array(&v) {
+    a.clone()
+  } else {
+    Vec::new()
+  };
+  if arr.is_empty() {
+    if cfg!(debug_assertions) {
+      return Err(format!("策略列表为空或无法解析; raw={}", short_text(&text, 800)));
+    }
+    return Err("策略列表为空或无法解析".into());
+  }
+
+  let mut out: Vec<ImgLaStrategy> = Vec::new();
+  for it in arr {
+    let id = it.get("id").map(v_to_u64).unwrap_or(0);
+    if id == 0 { continue; }
+    let name = it
+      .get("name")
+      .and_then(|x| x.as_str())
+      .map(|s| s.trim().to_string())
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| format!("#{id}"));
+    let intro = v_to_string(it.get("intro"));
+    let ty = v_to_string(it.get("type"));
+    let driver = v_to_string(it.get("driver"));
+    out.push(ImgLaStrategy { id, name, intro, r#type: ty, driver });
+  }
+  if out.is_empty() {
+    if cfg!(debug_assertions) {
+      return Err(format!("策略列表解析为空（id 可能异常）; raw={}", short_text(&text, 800)));
+    }
+    return Err("策略列表解析为空（id 可能异常）".into());
+  }
+  Ok(out)
+}
+
+#[tauri::command]
 async fn flymd_imgla_list_images(req: ImgLaListImagesReq) -> Result<Vec<UploadedImageRecord>, String> {
   use serde_json::Value;
 
@@ -912,6 +1133,7 @@ async fn flymd_imgla_list_images(req: ImgLaListImagesReq) -> Result<Vec<Uploaded
 #[tauri::command]
 async fn flymd_imgla_delete_image(app: tauri::AppHandle, req: ImgLaDeleteReq) -> Result<(), String> {
   use std::fs;
+  use serde_json::Value;
 
   let base = req.base_url.trim().trim_end_matches('/').to_string();
   if base.is_empty() {
@@ -925,24 +1147,103 @@ async fn flymd_imgla_delete_image(app: tauri::AppHandle, req: ImgLaDeleteReq) ->
     return Err("key 非法".into());
   }
 
-  let url = imgla_join(&base, &format!("/api/v1/images/{}", req.key));
   let client = reqwest::Client::builder()
     .timeout(Duration::from_secs(25))
     .build()
     .map_err(|e| format!("client error: {e}"))?;
 
-  let resp = client
-    .delete(&url)
-    .header("Accept", "application/json")
-    .bearer_auth(&token)
-    .send()
-    .await
-    .map_err(|e| format!("send error: {e}"))?;
+  // Lsky Pro+ 新旧接口并存（而且不同部署可能只支持其中一个）：
+  // - 新版（用户侧）：DELETE /api/v2/user/photos，Body 为 [id, ...]，成功通常是 204
+  // - 兼容新版（部分部署）：DELETE /api/v1/user/photos，Body 为 [id, ...]
+  // - 旧版（兼容）：DELETE /api/v1/images/{key}
+  // 现实很残酷：你只能兼容它。
+  fn parse_status_or_error(text: &str) -> Result<(), String> {
+    // Lsky/兰空常见坑：失败也可能返回 200 + { status:false, message:"..." }
+    // 另一个坑：token 失效时可能给你返回 200 + HTML（登录页/错误页），这也不能算成功。
+    let t = text.trim();
+    if t.is_empty() {
+      // 空 body：很多接口会这么干（尤其 204）
+      return Ok(());
+    }
+    let v: Value = serde_json::from_str(t).map_err(|_| {
+      // 非 JSON：十有八九是 HTML/文本错误页，别自欺欺人。
+      "响应不是 JSON（可能是 token 无效返回的 HTML）".to_string()
+    })?;
+    let ok = v.get("status").and_then(|x| x.as_bool()).unwrap_or(false);
+    if ok {
+      return Ok(());
+    }
+    let msg = v
+      .get("message")
+      .and_then(|x| x.as_str())
+      .unwrap_or("delete failed");
+    Err(msg.to_string())
+  }
 
-  let status = resp.status();
-  let text = resp.text().await.unwrap_or_default();
-  if !status.is_success() {
-    return Err(format!("HTTP {}: {}", status.as_u16(), text));
+  async fn send_delete(
+    client: &reqwest::Client,
+    token: &str,
+    url: &str,
+    body_ids: Option<Vec<u64>>,
+    expect_204_only: bool,
+  ) -> Result<(), String> {
+    let mut req = client
+      .delete(url)
+      .header("Accept", "application/json")
+      .bearer_auth(token);
+    if let Some(ids) = body_ids {
+      req = req.json(&ids);
+    }
+
+    let resp = req.send().await.map_err(|e| format!("send error: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if expect_204_only {
+      // 你给我的证据很清楚：204 才是成功。那就别瞎“成功”了。
+      if status.as_u16() != 204 {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+      }
+      return Ok(());
+    }
+
+    if status.as_u16() == 204 {
+      return Ok(());
+    }
+    if !status.is_success() {
+      return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    // 2xx 但不是 204：必须是 JSON 且 status=true，否则一律当失败，避免 200+HTML 假成功。
+    parse_status_or_error(&text)?;
+    Ok(())
+  }
+
+  let ids = vec![req.key];
+  let candidates: Vec<(String, Option<Vec<u64>>)> = vec![
+    // 新版优先：/api/v2/user/photos（204）
+    (imgla_join(&base, "/api/v2/user/photos"), Some(ids.clone())),
+    // 兼容：部分旧部署还是 v1
+    (imgla_join(&base, "/api/v1/user/photos"), Some(ids.clone())),
+    (imgla_join(&base, "/user/photos"), Some(ids.clone())),
+    // 旧版：/api/v1/images/{key}
+    (imgla_join(&base, &format!("/api/v1/images/{}", req.key)), None),
+    (imgla_join(&base, &format!("/images/{}", req.key)), None),
+  ];
+
+  let mut errs: Vec<String> = Vec::new();
+  for (url, body) in candidates {
+    let expect_204_only = url.contains("/api/v2/user/photos");
+    match send_delete(&client, &token, &url, body, expect_204_only).await {
+      Ok(()) => {
+        errs.clear();
+        break;
+      }
+      Err(e) => {
+        errs.push(format!("{url} -> {e}"));
+      }
+    }
+  }
+  if !errs.is_empty() {
+    return Err(format!("删除图片失败（已尝试多个接口）：{}", errs.join(" | ")));
   }
 
   // 同步从本地上传历史中移除（若存在）
@@ -1322,6 +1623,7 @@ fn main() {
         flymd_list_uploaded_images,
         flymd_delete_uploaded_image,
         flymd_imgla_list_albums,
+        flymd_imgla_list_strategies,
         flymd_imgla_list_images,
         flymd_imgla_delete_image,
         flymd_imgla_upload,
@@ -1384,6 +1686,8 @@ fn main() {
       if let Some(win) = app.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         {
+          install_windows_maximized_resizable_workaround(&win);
+
           // Windows：仅负责延迟显示和聚焦，窗口装饰交由 Tauri 管理
           let win_clone = win.clone();
           std::thread::spawn(move || {

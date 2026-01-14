@@ -1252,14 +1252,14 @@ app.innerHTML = `
       <button class="ribbon-btn" id="btn-filetree" title="${t('lib.toggle')}">${ribbonIcons.folder}</button>
       <button class="ribbon-btn" id="btn-open" title="${t('menu.file')}">${ribbonIcons.fileText}</button>
       <button class="ribbon-btn" id="btn-mode" title="${t('menu.mode')}">${ribbonIcons.layout}</button>
-      <button class="ribbon-btn" id="btn-plugins" title="${t('menu.plugins')}">${ribbonIcons.box}</button>
+      <button class="ribbon-btn" id="btn-plugins" title="${t('menu.plugins')}">${ribbonIcons.menu}</button>
       <button class="ribbon-btn" id="btn-update" title="${t('menu.update')}">${ribbonIcons.refreshCw}</button>
       <button class="ribbon-btn" id="btn-about" title="${t('menu.about')}">${ribbonIcons.info}</button>
     </div>
     <div class="ribbon-bottom">
       <button class="ribbon-btn" id="btn-theme" title="${t('menu.theme.tooltip')}">${ribbonIcons.settings}</button>
-      <button class="ribbon-btn" id="btn-extensions" title="${t('menu.extensions')}">${ribbonIcons.package}</button>
-      <button class="ribbon-btn" id="btn-lang" title="${t('menu.language')}">${ribbonIcons.globe}</button>
+      <button class="ribbon-btn" id="btn-extensions" title="${t('menu.extensions')}">${ribbonIcons.grid}</button>
+      <button class="ribbon-btn" id="btn-lang" title="${t('menu.language')}">${ribbonIcons.type}</button>
     </div>
   </aside>
   <main class="main-content">
@@ -1861,7 +1861,7 @@ async function renderPreviewLight() {
 }
 
 // 供所见 V2 调用：将粘贴/拖拽的图片保存到本地，并返回可写入 Markdown 的路径（自动生成不重复文件名）
-async function saveImageToLocalAndGetPath(file: File, fname: string): Promise<string | null> {
+async function saveImageToLocalAndGetPath(file: File, fname: string, force?: boolean): Promise<string | null> {
   return await saveImageToLocalAndGetPathCore(
     {
       getEditorValue: () => editor.value,
@@ -1885,6 +1885,7 @@ async function saveImageToLocalAndGetPath(file: File, fname: string): Promise<st
     },
     file,
     fname,
+    { force: !!force },
   )
 }
 
@@ -2715,7 +2716,10 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
             <div class="upl-section-title" id="upl-sec-imgla">${t('upl.imgla.section')}</div>
             <label id="upl-imgla-home-label">${t('upl.imgla.home')}</label>
             <div class="upl-field">
-              <a id="upl-imgla-open" href="https://www.imgla.net/" target="_blank" rel="noopener noreferrer">https://www.imgla.net/</a>
+              <div class="upl-inline-row">
+                <a id="upl-imgla-open" href="https://www.imgla.net/" target="_blank" rel="noopener noreferrer">https://www.imgla.net/</a>
+                <span class="upl-inline-note">${t('upl.imgla.promo')}</span>
+              </div>
             </div>
             <label for="upl-imgla-baseurl">${t('upl.imgla.baseUrl')}</label>
             <div class="upl-field">
@@ -2729,7 +2733,11 @@ wysiwygCaretEl.id = 'wysiwyg-caret'
             </div>
             <label for="upl-imgla-strategy">${t('upl.imgla.strategy')}</label>
             <div class="upl-field">
-              <input id="upl-imgla-strategy" type="number" min="1" step="1" placeholder="${t('upl.imgla.strategy.ph')}" />
+              <div style="display:flex;align-items:center;gap:8px;min-width:220px;">
+                <select id="upl-imgla-strategy-sel" style="flex:1;min-width:0;"></select>
+                <input id="upl-imgla-strategy" type="number" min="1" step="1" style="width:96px;" placeholder="1" />
+                <button type="button" id="upl-imgla-strategy-refresh" class="btn-secondary">${t('upl.refresh')}</button>
+              </div>
               <div class="upl-hint" id="upl-hint-imgla-strategy">${t('upl.imgla.strategy.hint')}</div>
             </div>
             <label for="upl-imgla-album">${t('upl.imgla.album')}</label>
@@ -4155,11 +4163,31 @@ async function openFile2(preset?: unknown) {
     }
 
     // 兼容 macOS 场景：部分环境下 multiple:false 仍可能返回数组；若为数组取首个
+    const aspFilters = (() => {
+      try {
+        const fn = (pluginHost as any)?.getAdditionalSuffixDialogFilters
+        if (typeof fn !== 'function') return []
+        const list = fn.call(pluginHost)
+        if (!Array.isArray(list)) return []
+        return list
+          .filter((x: any) => x && typeof x === 'object')
+          .map((x: any) => ({
+            name: String(x.name || '').trim() || 'Additional',
+            extensions: Array.isArray(x.extensions)
+              ? x.extensions.map((e: any) => String(e || '')).filter(Boolean)
+              : [],
+          }))
+          .filter((x: any) => x.extensions && x.extensions.length > 0)
+      } catch {
+        return []
+      }
+    })()
     let selected: any = (typeof preset === 'string')
       ? preset
       : (await open({ multiple: false, filters: [
         { name: 'Markdown', extensions: ['md', 'markdown', 'txt'] },
         { name: 'PDF', extensions: ['pdf'] },
+        ...aspFilters,
       ] }))
     if (!selected) return
     if (Array.isArray(selected)) { if (selected.length < 1) return; selected = selected[0] }
@@ -4190,11 +4218,50 @@ async function openFile2(preset?: unknown) {
       // 选择“否”时直接继续切换；取消由 confirmNative 返回 false 的语义中无法区分“否/取消”，因此默认视为不保存继续
     }
 
-    // PDF 预览分支：在读取文本前拦截处理
+    // ASP：根据文件后缀决定打开策略（避免在核心硬编码新后缀）
     try {
       const ext = (selectedPath.split(/\./).pop() || '').toLowerCase()
       if (ext === 'pdf') {
         await showPdfPreview(selectedPath, { updateRecent: true, forceReload: reopeningSameFile })
+        return
+      }
+      const rule = (() => {
+        try {
+          return (pluginHost as any)?.getAdditionalSuffixRule?.(ext) || null
+        } catch {
+          return null
+        }
+      })()
+      if (rule && rule.openWith && rule.openWith.mode === 'plugin') {
+        const target = String(rule.openWith.pluginId || '').trim()
+        const method = String(rule.openWith.method || 'open').trim() || 'open'
+        const api = (() => {
+          try {
+            return (pluginHost as any)?.getPluginAPI?.(target) || null
+          } catch {
+            return null
+          }
+        })()
+        const mod = (() => {
+          try {
+            return (pluginHost as any)?.getActivePluginModule?.(target) || null
+          } catch {
+            return null
+          }
+        })()
+        const fn =
+          (api && typeof api[method] === 'function' ? api[method] : null) ||
+          (mod && typeof mod[method] === 'function' ? mod[method] : null) ||
+          (mod && typeof mod.open === 'function' ? mod.open : null) ||
+          null
+        if (typeof fn === 'function') {
+          await fn(selectedPath)
+          try { await pushRecent(selectedPath as any) } catch {}
+          try { await renderRecentPanel(false) } catch {}
+        } else {
+          const pretty = String(rule.displayName || `.${ext}`) || `.${ext}`
+          pluginNotice(`需要先安装并启用 ${target} 扩展才能打开 ${pretty} 文件`, 'err', 3200)
+        }
         return
       }
     } catch {}
@@ -4316,7 +4383,8 @@ async function exportCurrentDocToPdf(target: string): Promise<void> {
     throw new Error('writeFile not available')
   }
   status.textContent = '正在导出 PDF...'
-  await renderPreview()
+  // 导出应当按打印语义渲染：不带所见模式的模拟光标/交互标记
+  await renderPreview({ forPrint: true })
   const el = preview.querySelector('.preview-body') as HTMLElement | null
   if (!el) throw new Error('未找到预览内容容器')
   const { exportPdf } = await import('./exporters/pdf')
@@ -4374,7 +4442,8 @@ async function saveAs() {
       try {
         if (ext === 'pdf') {
           status.textContent = '正在导出 PDF...';
-          await renderPreview();
+          // 导出应当按打印语义渲染：不带所见模式的模拟光标/交互标记
+          await renderPreview({ forPrint: true });
           const el = preview.querySelector('.preview-body') as HTMLElement | null;
           if (!el) throw new Error('未找到预览内容容器');
           const { exportPdf } = await import('./exporters/pdf');
@@ -4382,7 +4451,8 @@ async function saveAs() {
           await writeFile(target as any, bytes as any);
         } else {
           status.textContent = '正在导出 ' + ext.toUpperCase() + '...';
-          await renderPreview();
+          // DOCX/WPS 同样按打印语义渲染，避免把所见模式的模拟光标导出进去
+          await renderPreview({ forPrint: true });
           const el = preview.querySelector('.preview-body') as HTMLElement | null;
           if (!el) throw new Error('未找到预览内容容器');
           const html = el.outerHTML;
@@ -5108,7 +5178,7 @@ try {
     ;(window as any).flymdGetCurrentFilePath = () => currentFilePath
     ;(window as any).flymdGetDefaultPasteDir = () => getDefaultPasteDir()
     ;(window as any).flymdAlwaysSaveLocalImages = () => getAlwaysSaveLocalImages()
-    ;(window as any).flymdSaveImageToLocalAndGetPath = (file: File, name: string) => saveImageToLocalAndGetPath(file, name)
+    ;(window as any).flymdSaveImageToLocalAndGetPath = (file: File, name: string, force?: boolean) => saveImageToLocalAndGetPath(file, name, force)
   }
 } catch {}
 
@@ -5719,6 +5789,25 @@ function initWindowResize() {
     container.appendChild(handle)
   })
   document.body.appendChild(container)
+
+  // 最大化时禁用自定义 resize handles：顶部 5px 会抢事件，导致“下拉还原”变成“改窗口高度”。
+  // 只影响最大化状态，恢复后自动还原，不碰其它交互。
+  const setMaximizedClass = (isMax: boolean) => {
+    if (isMax) document.body.classList.add('window-maximized')
+    else document.body.classList.remove('window-maximized')
+  }
+  ;(async () => {
+    if (!isTauriRuntime()) return
+    try {
+      const win = getCurrentWindow()
+      try { setMaximizedClass(await win.isMaximized()) } catch {}
+      try {
+        await win.listen('flymd://window-maximized-changed', (ev: any) => {
+          try { setMaximizedClass(!!(ev && typeof ev === 'object' ? (ev as any).payload : ev)) } catch {}
+        })
+      } catch {}
+    } catch {}
+  })()
 
   // resize 状态
   let resizing = false
@@ -8255,6 +8344,15 @@ function bindEvents() {
       }
       return
     }
+    // Ctrl+Shift+Z：显示/隐藏库侧栏（文件树）
+    // 只绑定 Ctrl（不绑定 Cmd），避免在 macOS 抢走 Cmd+Shift+Z 的“重做”。
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') {
+      e.preventDefault()
+      try { e.stopPropagation() } catch {}
+      try { (e as any).stopImmediatePropagation && (e as any).stopImmediatePropagation() } catch {}
+      try { await toggleLibraryFileTreeFromRibbon() } catch {}
+      return
+    }
     // 专注模式快捷键 Ctrl+Shift+F
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); await toggleFocusMode(); return }
     // 文件操作快捷键
@@ -8324,9 +8422,8 @@ function bindEvents() {
   // 库侧栏搜索按钮：快速文件搜索
   const btnSearch = document.getElementById('btn-search')
   if (btnSearch) btnSearch.addEventListener('click', guard(() => showQuickSearch()))
-  // Ribbon 文件树切换按钮
-  const btnFiletree = document.getElementById('btn-filetree')
-  if (btnFiletree) btnFiletree.addEventListener('click', guard(async () => {
+
+  async function toggleLibraryFileTreeFromRibbon(): Promise<void> {
     const lib = document.getElementById('library')
     const showing = lib && !lib.classList.contains('hidden')
     if (showing) { showLibrary(false); return }
@@ -8348,6 +8445,12 @@ function bindEvents() {
       await fileTree.refresh()
     }
     try { const s = await getLibrarySort(); fileTree.setSort(s); await fileTree.refresh() } catch {}
+  }
+
+  // Ribbon 文件树切换按钮
+  const btnFiletree = document.getElementById('btn-filetree')
+  if (btnFiletree) btnFiletree.addEventListener('click', guard(async () => {
+    await toggleLibraryFileTreeFromRibbon()
   }))
   // 非固定模式：点击库外空白自动隐藏
   document.addEventListener('mousedown', (ev) => {
@@ -9117,6 +9220,8 @@ function bindEvents() {
             })
           } catch {}
           await loadAndActivateEnabledPlugins()
+          // 插件可能注册了额外后缀（ASP），刷新文件树以应用过滤与图标规则
+          try { if (fileTreeReady) await fileTree.refresh() } catch {}
           await ensureCoreExtensionsAfterStartup(store, APP_VERSION, activatePlugin)
           // 启动后后台检查一次扩展更新（仅提示，不自动更新）
           await checkPluginUpdatesOnStartup()
@@ -9476,6 +9581,19 @@ const {
   removePluginDir,
   loadAndActivateEnabledPlugins,
 } = pluginRuntime
+
+// ASP：提供给文件树使用的“额外后缀展示配置”查询入口（避免在 fileTree.ts 中直接依赖插件运行时）
+try {
+  ;(window as any).__flymdGetAdditionalSuffixMeta = () => {
+    try {
+      return (pluginHost as any)?.getAdditionalSuffixFileTreeMeta?.() || {}
+    } catch {
+      return {}
+    }
+  }
+} catch {}
+// 若文件树已初始化，则刷新一次以应用新的后缀规则（例如 .zhixu）
+try { if (fileTreeReady) { void fileTree.refresh() } } catch {}
 
 // 插件菜单管理：提供“右键菜单 / 下拉菜单”可见性开关的宿主依赖
 const pluginMenuManagerHost: PluginMenuManagerHost = {

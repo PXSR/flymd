@@ -2,6 +2,26 @@
 
 [简体中文](ROADMAP.md) | [English](ROADMAP.en.md)
 
+## Update v1.1.6
+- Added: “editor-enhancer” plugin with a `/` command menu, now available in Extension Market
+- Fixed: Page breaks when saving as PDF (less chance of cutting lines in half)
+- Improved: Faster PDF export
+- Improved: WebDAV sync now supports ports other than 443
+- Fixed: On Windows, dragging down a maximized window to restore could be hijacked by custom resize handles
+- Changed: ImgLa uploader now shows a promo/coupon note
+
+## Update v1.1.5
+- Fixed: Incorrect table insertion position in WYSIWYG mode
+- Fixed: Built-in “Image Gallery” plugin couldn’t delete images on Lsky (Lsky Pro+)
+- Improved: Lsky (Lsky Pro+) storage location is now a dropdown selection
+- Improved: Fallback to local on upload failure (instead of base64)
+
+## Update v1.1.4
+- Added: Shortcut `Ctrl+Shift+Z` to toggle the Library sidebar
+- Improved: About dialog now includes a clearer keyboard shortcuts list
+- Improved: Smaller Library sidebar trigger hotspot in split view to reduce accidental activation
+- Changed: Updated icons for menu, extension marketplace, and language selector
+
 ## Update v1.1.3
 - Added: Lsky (Lsky Pro+) image host support (ImgLa compatible, configurable base URL)
 - Fixed: HTML sanitization on paste could break code formatting

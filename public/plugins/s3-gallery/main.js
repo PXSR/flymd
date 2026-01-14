@@ -30,6 +30,22 @@ function s3gText(zh, en) {
 // S3/R2 本地历史分页：超过 9 条就翻页显示，避免一次性渲染太多导致 UI/预览交互不稳定
 const S3G_PAGE_SIZE = 9
 
+// 设备检测函数：支持响应式布局
+function s3gIsMobile() {
+  return window.innerWidth <= 576
+}
+
+function s3gIsTablet() {
+  return window.innerWidth > 576 && window.innerWidth <= 768
+}
+
+function s3gGetDeviceType() {
+  const width = window.innerWidth
+  if (width <= 576) return 'mobile'
+  if (width <= 768) return 'tablet'
+  return 'desktop'
+}
+
 let _panel = null
 let _listRoot = null
 let _loadingEl = null
@@ -64,6 +80,15 @@ let _previewRaf = 0
 let _previewX = 0
 let _previewY = 0
 
+// 移动端全屏预览模态框
+let _mobileModal = null
+let _mobileModalImg = null
+let _mobileModalCaption = null
+
+// resize 监听器和防抖定时器
+let _resizeHandler = null
+let _resizeTimer = null
+
 function s3gEnsurePreviewLayer() {
   if (_previewRoot && document.body.contains(_previewRoot)) return _previewRoot
 
@@ -80,24 +105,42 @@ function s3gEnsurePreviewLayer() {
   root.style.borderRadius = '10px'
   root.style.padding = '8px'
   root.style.boxShadow = '0 10px 28px rgba(0,0,0,0.45)'
-  root.style.maxWidth = '70vw'
-  root.style.maxHeight = '70vh'
+
+  // 响应式尺寸：移动端使用更小的预览窗口
+  if (s3gIsMobile()) {
+    root.style.maxWidth = '85vw'
+    root.style.maxHeight = '60vh'
+  } else {
+    root.style.maxWidth = '70vw'
+    root.style.maxHeight = '70vh'
+  }
 
   const img = document.createElement('img')
   img.style.display = 'block'
-  img.style.maxWidth = '70vw'
-  img.style.maxHeight = '65vh'
   img.style.objectFit = 'contain'
   img.style.borderRadius = '6px'
+
+  if (s3gIsMobile()) {
+    img.style.maxWidth = '85vw'
+    img.style.maxHeight = '55vh'
+  } else {
+    img.style.maxWidth = '70vw'
+    img.style.maxHeight = '65vh'
+  }
 
   const cap = document.createElement('div')
   cap.style.marginTop = '6px'
   cap.style.fontSize = '11px'
   cap.style.opacity = '0.85'
-  cap.style.maxWidth = '70vw'
   cap.style.whiteSpace = 'nowrap'
   cap.style.overflow = 'hidden'
   cap.style.textOverflow = 'ellipsis'
+
+  if (s3gIsMobile()) {
+    cap.style.maxWidth = '85vw'
+  } else {
+    cap.style.maxWidth = '70vw'
+  }
 
   root.appendChild(img)
   root.appendChild(cap)
@@ -171,6 +214,87 @@ function s3gShowPreview(url, caption) {
     _previewRoot.style.visibility = 'visible'
     s3gPositionPreview(_previewX, _previewY)
   })
+}
+
+// 移动端全屏预览模态框
+function s3gShowMobileModal(url, caption) {
+  if (!url) return
+
+  // 创建模态框（懒加载）
+  if (!_mobileModal) {
+    const modal = document.createElement('div')
+    modal.id = 'flymd-s3-gallery-mobile-modal'
+    modal.style.position = 'fixed'
+    modal.style.left = '0'
+    modal.style.top = '0'
+    modal.style.width = '100vw'
+    modal.style.height = '100vh'
+    modal.style.background = 'rgba(0,0,0,0.95)'
+    modal.style.zIndex = '10001'
+    modal.style.display = 'none'
+    modal.style.justifyContent = 'center'
+    modal.style.alignItems = 'center'
+    modal.style.flexDirection = 'column'
+    modal.style.padding = '16px'
+
+    const img = document.createElement('img')
+    img.style.maxWidth = '90vw'
+    img.style.maxHeight = '80vh'
+    img.style.objectFit = 'contain'
+
+    const cap = document.createElement('div')
+    cap.style.color = '#fff'
+    cap.style.marginTop = '12px'
+    cap.style.fontSize = '14px'
+    cap.style.textAlign = 'center'
+    cap.style.maxWidth = '90vw'
+    cap.style.wordBreak = 'break-all'
+
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '×'
+    closeBtn.style.position = 'absolute'
+    closeBtn.style.top = '16px'
+    closeBtn.style.right = '16px'
+    closeBtn.style.width = '44px'
+    closeBtn.style.height = '44px'
+    closeBtn.style.borderRadius = '50%'
+    closeBtn.style.border = 'none'
+    closeBtn.style.background = 'rgba(255,255,255,0.2)'
+    closeBtn.style.color = '#fff'
+    closeBtn.style.fontSize = '28px'
+    closeBtn.style.cursor = 'pointer'
+    closeBtn.style.lineHeight = '44px'
+    closeBtn.style.textAlign = 'center'
+    closeBtn.onclick = () => {
+      modal.style.display = 'none'
+    }
+
+    // 点击背景关闭
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none'
+      }
+    }
+
+    modal.appendChild(img)
+    modal.appendChild(cap)
+    modal.appendChild(closeBtn)
+    document.body.appendChild(modal)
+
+    _mobileModal = modal
+    _mobileModalImg = img
+    _mobileModalCaption = cap
+  }
+
+  // 显示模态框
+  _mobileModalImg.src = url
+  _mobileModalImg.alt = caption || ''
+  _mobileModalCaption.textContent = caption || ''
+  _mobileModal.style.display = 'flex'
+}
+
+function s3gHideMobileModal() {
+  if (_mobileModal) _mobileModal.style.display = 'none'
 }
 
 async function s3gGetUploaderRawConfig() {
@@ -292,10 +416,6 @@ function ensurePanel(context) {
   const panel = document.createElement('div')
   panel.id = 'flymd-s3-gallery-panel'
   panel.style.position = 'fixed'
-  panel.style.right = '24px'
-  panel.style.bottom = '32px'
-  panel.style.width = '520px'
-  panel.style.maxHeight = '70vh'
   panel.style.background = 'var(--flymd-bg, #1e1e1e)'
   panel.style.color = 'var(--flymd-fg, #eee)'
   panel.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)'
@@ -305,6 +425,30 @@ function ensurePanel(context) {
   panel.style.flexDirection = 'column'
   panel.style.overflow = 'hidden'
   panel.style.fontSize = '13px'
+
+  // 响应式布局：根据设备类型调整面板宽度和位置
+  const deviceType = s3gGetDeviceType()
+  if (deviceType === 'mobile') {
+    // 移动端：几乎全屏，留 8px 边距
+    panel.style.left = '8px'
+    panel.style.right = '8px'
+    panel.style.bottom = '8px'
+    panel.style.width = 'auto'
+    panel.style.maxHeight = '85vh'
+  } else if (deviceType === 'tablet') {
+    // 平板端：居中，90% 宽度
+    panel.style.left = '5vw'
+    panel.style.right = '5vw'
+    panel.style.bottom = '32px'
+    panel.style.width = 'auto'
+    panel.style.maxHeight = '75vh'
+  } else {
+    // 桌面端：原始位置和宽度
+    panel.style.right = '24px'
+    panel.style.bottom = '32px'
+    panel.style.width = '520px'
+    panel.style.maxHeight = '70vh'
+  }
 
   const header = document.createElement('div')
   header.style.display = 'flex'
@@ -329,10 +473,16 @@ function ensurePanel(context) {
   refreshBtn.style.cursor = 'pointer'
   refreshBtn.style.border = 'none'
   refreshBtn.style.borderRadius = '4px'
-  refreshBtn.style.padding = '2px 10px'
   refreshBtn.style.background = '#3b82f6'
   refreshBtn.style.color = '#fff'
-  refreshBtn.style.fontSize = '12px'
+  // 响应式按钮尺寸
+  if (s3gIsMobile()) {
+    refreshBtn.style.padding = '6px 12px'
+    refreshBtn.style.fontSize = '13px'
+  } else {
+    refreshBtn.style.padding = '2px 10px'
+    refreshBtn.style.fontSize = '12px'
+  }
   refreshBtn.onclick = () => {
     void refreshList(_ctx)
   }
@@ -342,13 +492,21 @@ function ensurePanel(context) {
   closeBtn.style.cursor = 'pointer'
   closeBtn.style.border = 'none'
   closeBtn.style.borderRadius = '4px'
-  closeBtn.style.width = '24px'
-  closeBtn.style.height = '24px'
-  closeBtn.style.fontSize = '16px'
-  closeBtn.style.lineHeight = '22px'
   closeBtn.style.textAlign = 'center'
   closeBtn.style.background = 'transparent'
   closeBtn.style.color = 'inherit'
+  // 响应式按钮尺寸
+  if (s3gIsMobile()) {
+    closeBtn.style.width = '32px'
+    closeBtn.style.height = '32px'
+    closeBtn.style.fontSize = '20px'
+    closeBtn.style.lineHeight = '32px'
+  } else {
+    closeBtn.style.width = '24px'
+    closeBtn.style.height = '24px'
+    closeBtn.style.fontSize = '16px'
+    closeBtn.style.lineHeight = '22px'
+  }
   closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255,255,255,0.1)' }
   closeBtn.onmouseleave = () => { closeBtn.style.background = 'transparent' }
   closeBtn.onclick = () => {
@@ -370,25 +528,44 @@ function ensurePanel(context) {
 
   const controls = document.createElement('div')
   controls.style.display = 'flex'
-  controls.style.alignItems = 'center'
   controls.style.gap = '8px'
   controls.style.marginBottom = '6px'
+  // 响应式布局：移动端垂直堆叠
+  if (s3gIsMobile()) {
+    controls.style.flexDirection = 'column'
+    controls.style.alignItems = 'stretch'
+  } else {
+    controls.style.flexDirection = 'row'
+    controls.style.alignItems = 'center'
+  }
 
   const providerTag = document.createElement('div')
   providerTag.style.fontSize = '11px'
   providerTag.style.opacity = '0.8'
-  providerTag.style.whiteSpace = 'nowrap'
+  // 响应式文本换行
+  if (s3gIsMobile()) {
+    providerTag.style.whiteSpace = 'normal'
+    providerTag.style.marginBottom = '4px'
+  } else {
+    providerTag.style.whiteSpace = 'nowrap'
+  }
   _providerTagEl = providerTag
 
   const albumSelect = document.createElement('select')
-  albumSelect.style.flex = '1'
   albumSelect.style.minWidth = '0'
-  albumSelect.style.padding = '4px 8px'
   albumSelect.style.borderRadius = '6px'
   albumSelect.style.border = '1px solid rgba(255,255,255,0.12)'
   albumSelect.style.background = 'rgba(0,0,0,0.2)'
   albumSelect.style.color = 'inherit'
   albumSelect.style.fontSize = '12px'
+  // 响应式宽度和 padding
+  if (s3gIsMobile()) {
+    albumSelect.style.width = '100%'
+    albumSelect.style.padding = '8px'
+  } else {
+    albumSelect.style.flex = '1'
+    albumSelect.style.padding = '4px 8px'
+  }
   albumSelect.onchange = () => {
     _imglaAlbumId = s3gGetSelectedImglaAlbumId()
     try {
@@ -405,10 +582,16 @@ function ensurePanel(context) {
   albumRefreshBtn.style.cursor = 'pointer'
   albumRefreshBtn.style.border = '1px solid rgba(255,255,255,0.12)'
   albumRefreshBtn.style.borderRadius = '6px'
-  albumRefreshBtn.style.padding = '4px 10px'
   albumRefreshBtn.style.background = 'rgba(0,0,0,0.2)'
   albumRefreshBtn.style.color = 'inherit'
   albumRefreshBtn.style.fontSize = '12px'
+  // 响应式宽度和 padding
+  if (s3gIsMobile()) {
+    albumRefreshBtn.style.width = '100%'
+    albumRefreshBtn.style.padding = '8px 10px'
+  } else {
+    albumRefreshBtn.style.padding = '4px 10px'
+  }
   albumRefreshBtn.onclick = () => {
     _imglaPage = 1
     void refreshList(_ctx)
@@ -440,9 +623,15 @@ function ensurePanel(context) {
   listRoot.style.flex = '1'
   listRoot.style.overflow = 'auto'
   listRoot.style.display = 'grid'
-  listRoot.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))'
-  listRoot.style.gridGap = '8px'
   listRoot.style.paddingBottom = '4px'
+  // 响应式网格：移动端使用更小的列宽
+  if (s3gIsMobile()) {
+    listRoot.style.gridTemplateColumns = 'repeat(auto-fill, minmax(135px, 1fr))'
+    listRoot.style.gridGap = '6px'
+  } else {
+    listRoot.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))'
+    listRoot.style.gridGap = '8px'
+  }
   _listRoot = listRoot
 
   const footer = document.createElement('div')
@@ -531,6 +720,46 @@ function ensurePanel(context) {
   document.body.appendChild(panel)
   _panel = panel
   try { s3gApplyModeUi(_mode) } catch {}
+
+  // 添加 resize 监听器：支持横竖屏切换和窗口缩放
+  if (!_resizeHandler) {
+    _resizeHandler = () => {
+      if (_resizeTimer) clearTimeout(_resizeTimer)
+      _resizeTimer = setTimeout(() => {
+        if (_panel && _panel.style.display !== 'none') {
+          const deviceType = s3gGetDeviceType()
+
+          // 重新应用面板样式
+          if (deviceType === 'mobile') {
+            _panel.style.left = '8px'
+            _panel.style.right = '8px'
+            _panel.style.bottom = '8px'
+            _panel.style.width = 'auto'
+            _panel.style.maxHeight = '85vh'
+          } else if (deviceType === 'tablet') {
+            _panel.style.left = '5vw'
+            _panel.style.right = '5vw'
+            _panel.style.bottom = '32px'
+            _panel.style.width = 'auto'
+            _panel.style.maxHeight = '75vh'
+          } else {
+            _panel.style.right = '24px'
+            _panel.style.bottom = '32px'
+            _panel.style.left = 'auto'
+            _panel.style.width = '520px'
+            _panel.style.maxHeight = '70vh'
+          }
+
+          // 重新渲染列表以更新按钮样式和网格布局
+          if (_records && _records.length > 0) {
+            renderList(_records)
+          }
+        }
+      }, 150)
+    }
+    window.addEventListener('resize', _resizeHandler)
+  }
+
   return panel
 }
 
@@ -601,20 +830,28 @@ function renderList(records) {
       img.style.objectFit = 'contain'
       thumbBox.appendChild(img)
 
-      // 悬浮预览：大图展示，不改动现有卡片布局
+      // 预览功能：移动端点击显示模态框，桌面端悬浮预览
       thumbBox.style.cursor = 'zoom-in'
-      thumbBox.onmouseenter = (ev) => {
-        _previewX = ev && typeof ev.clientX === 'number' ? ev.clientX : 0
-        _previewY = ev && typeof ev.clientY === 'number' ? ev.clientY : 0
-        s3gShowPreview(url, img.alt || '')
-      }
-      thumbBox.onmousemove = (ev) => {
-        _previewX = ev && typeof ev.clientX === 'number' ? ev.clientX : _previewX
-        _previewY = ev && typeof ev.clientY === 'number' ? ev.clientY : _previewY
-        s3gSchedulePreviewPos()
-      }
-      thumbBox.onmouseleave = () => {
-        s3gHidePreview()
+      if (s3gIsMobile()) {
+        // 移动端：点击显示全屏模态框
+        thumbBox.onclick = () => {
+          s3gShowMobileModal(url, img.alt || '')
+        }
+      } else {
+        // 桌面端：悬浮预览
+        thumbBox.onmouseenter = (ev) => {
+          _previewX = ev && typeof ev.clientX === 'number' ? ev.clientX : 0
+          _previewY = ev && typeof ev.clientY === 'number' ? ev.clientY : 0
+          s3gShowPreview(url, img.alt || '')
+        }
+        thumbBox.onmousemove = (ev) => {
+          _previewX = ev && typeof ev.clientX === 'number' ? ev.clientX : _previewX
+          _previewY = ev && typeof ev.clientY === 'number' ? ev.clientY : _previewY
+          s3gSchedulePreviewPos()
+        }
+        thumbBox.onmouseleave = () => {
+          s3gHidePreview()
+        }
       }
     } else {
       const span = document.createElement('span')
@@ -708,11 +945,17 @@ function styleActionButton(btn) {
   btn.style.flex = '1'
   btn.style.border = 'none'
   btn.style.borderRadius = '4px'
-  btn.style.padding = '3px 4px'
   btn.style.cursor = 'pointer'
-  btn.style.fontSize = '11px'
   btn.style.background = '#374151'
   btn.style.color = '#f9fafb'
+  // 响应式按钮尺寸：移动端更大的触摸目标
+  if (s3gIsMobile()) {
+    btn.style.padding = '8px 6px'
+    btn.style.fontSize = '12px'
+  } else {
+    btn.style.padding = '3px 4px'
+    btn.style.fontSize = '11px'
+  }
 }
 
 async function copyUrl(url) {
@@ -1061,6 +1304,22 @@ export function deactivate() {
       _previewRoot.parentElement.removeChild(_previewRoot)
     }
   } catch {}
+  // 清理移动端模态框
+  try {
+    if (_mobileModal && _mobileModal.parentElement) {
+      _mobileModal.parentElement.removeChild(_mobileModal)
+    }
+  } catch {}
+  // 移除 resize 监听器
+  try {
+    if (_resizeHandler) {
+      window.removeEventListener('resize', _resizeHandler)
+    }
+    if (_resizeTimer) {
+      clearTimeout(_resizeTimer)
+    }
+  } catch {}
+
   _panel = null
   _listRoot = null
   _loadingEl = null
@@ -1084,4 +1343,9 @@ export function deactivate() {
   _previewCaption = null
   _previewUrl = ''
   _previewRaf = 0
+  _mobileModal = null
+  _mobileModalImg = null
+  _mobileModalCaption = null
+  _resizeHandler = null
+  _resizeTimer = null
 }
